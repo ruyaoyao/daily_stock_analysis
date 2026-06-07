@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] 新增各市场总开关 `MARKET_CN_ENABLED` / `MARKET_HK_ENABLED` / `MARKET_US_ENABLED` / `MARKET_TW_ENABLED`（默认全开）：可独立关闭某市场（如 A 股），关闭后该市场个股不抓取/不分析，且不纳入大盘复盘；不配置则维持现有行为。Settings 提供对应开关。
+- [新功能] Web UI 新增繁體中文（zh-Hant，台灣用語）介面語言，與既有简体/English 並列，可在語言切換鈕循環選擇（简→繁→EN），偏好持久化於 `dsa.uiLanguage`。
+- [新功能] 分析报告/通知新增繁体中文输出：`REPORT_LANGUAGE=zh-Hant`（或 zh-TW）时，结构化标签与枚举使用繁体，报告正文在输出边界经 opencc（s2twp）统一转为台湾繁体；未安装 opencc 时优雅降级保持简体，不中断流程。
+- [改进] `REPORT_LANGUAGE` 配置项（含 Settings 下拉）支持 `zh-Hant`，`normalize_report_language` 将 zh-tw/zh-hant/tw 等别名归一化为 zh-Hant，并与 zh(简体)/en 区分。
+- [新功能] 新增台股支持：经永丰金 Shioaji 取得台股日线 K 线、即时快照与个股名称（代码需带 `tw` 前缀，如 `tw2330`、`tw0050`、`tw00878`），仅在配置 `SHIOAJI_API_KEY`/`SHIOAJI_SECRET_KEY` 时启用。
+- [新功能] 台股三大法人买卖超与融资融券余额经 TWSE/TPEx OpenAPI 取得（无需金钥）；单一来源失败优雅降级返回空，不中断主流程。
+- [新功能] 大盘复盘新增台股区域：`MARKET_REVIEW_REGION=tw` 复盘加权指数（^TWII）与柜买指数（^TWOII，经 yfinance）；`both` 仍仅含 cn+hk+us。
+- [改进] 交易日历新增台股（exchange-calendars `XTAI`，时区 Asia/Taipei），按市场过滤当日开市股票时纳入台股。
 - [chore] 移除随 issue / PR 验收流程误入库的截图资产，并明确一次性截图证据应保留在 PR 描述、评论、附件或 artifact 中，不作为仓库文件合入。
 - [修复] 综合情报搜索中的机构分析与业绩预期维度改用 180 天 provider 请求窗口，避免默认短新闻窗口漏掉财报、研报等周期性财经材料。
 - [改进] 多股通知报告将市场阶段收敛为总览下方单行 `市场状态`，不再在每只股票摘要下重复展示数据质量和限制详情。

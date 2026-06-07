@@ -48,6 +48,7 @@ from src.report_language import (
     localize_trend_prediction,
     normalize_report_language,
 )
+from src.zh_convert import to_report_script
 from bot.models import BotMessage
 from src.utils.sanitize import sanitize_diagnostic_text
 from src.utils.data_processing import normalize_model_used
@@ -2190,6 +2191,8 @@ class NotificationService(
         Returns:
             Structured dispatch diagnostics.
         """
+        # zh-Hant：在输出边界统一将报告/通知文本转为台湾繁体（opencc 不可用时原样返回）
+        content = to_report_script(content, self._get_report_language())
         context_success = self.send_to_context(content)
         if not self.should_broadcast_static_channels():
             if context_success:
@@ -2413,7 +2416,10 @@ class NotificationService(
             保存的文件路径
         """
         from pathlib import Path
-        
+
+        # zh-Hant：持久化的报告文件同样转为台湾繁体，保证 Web/历史读取到的也是繁体
+        content = to_report_script(content, self._get_report_language())
+
         if filename is None:
             date_str = datetime.now().strftime('%Y%m%d')
             filename = f"report_{date_str}.md"

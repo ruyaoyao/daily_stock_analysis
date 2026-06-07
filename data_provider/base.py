@@ -97,6 +97,14 @@ def normalize_stock_code(stock_code: str) -> str:
         if candidate.isdigit() and 1 <= len(candidate) <= 5:
             return f"HK{candidate.zfill(5)}"
 
+    # Normalize TW prefix to a canonical form (e.g. tw2330 -> TW2330, tw00878 -> TW00878).
+    # Taiwan codes are 4-6 digits and MUST carry an explicit TW prefix to avoid
+    # colliding with A-share (6-digit) / HK (5-digit) numeric detection.
+    if upper.startswith('TW') and not upper.startswith('TW.'):
+        candidate = upper[2:]
+        if candidate.isdigit() and 4 <= len(candidate) <= 6:
+            return f"TW{candidate}"
+
     # Strip SH/SZ prefix (e.g. SH600519 -> 600519)
     if upper.startswith(('SH', 'SZ')) and not upper.startswith('SH.') and not upper.startswith('SZ.'):
         candidate = code[2:]
@@ -127,6 +135,8 @@ def normalize_stock_code(stock_code: str) -> str:
         base, suffix = code.rsplit('.', 1)
         if suffix.upper() == 'HK' and base.isdigit() and 1 <= len(base) <= 5:
             return f"HK{base.zfill(5)}"
+        if suffix.upper() in ('TW', 'TWO') and base.isdigit() and 4 <= len(base) <= 6:
+            return f"TW{base}"
         if base.upper() in ('SH', 'SS', 'SZ', 'BJ') and suffix.isdigit():
             return suffix
         if suffix.upper() in ('SH', 'SZ', 'SS', 'BJ') and base.isdigit():
@@ -162,6 +172,29 @@ def _is_hk_market(code: str) -> bool:
     if normalized.isdigit() and len(normalized) == 5:
         return True
     return False
+
+
+def _is_tw_market(code: str) -> bool:
+    """
+    判定是否为台股代码。
+
+    台股代码与 A 股/港股纯数字格式重叠，因此要求显式 `TW` 前缀
+    或 `.TW` / `.TWO` 后缀（如 `TW2330`、`tw00878`、`2330.TW`），
+    避免误判 6 位 A 股或 5 位港股代码。
+    """
+    normalized = (code or "").strip().upper()
+    if normalized.endswith(".TWO") or normalized.endswith(".TW"):
+        base = normalized.rsplit(".", 1)[0]
+        return base.isdigit() and 4 <= len(base) <= 6
+    if normalized.startswith("TW"):
+        digits = normalized[2:]
+        return digits.isdigit() and 4 <= len(digits) <= 6
+    return False
+
+
+def is_tw_stock_code(code: str) -> bool:
+    """公开别名：判定是否为台股代码（供交易日历等上层模块复用）。"""
+    return _is_tw_market(code)
 
 
 def _is_etf_code(code: str) -> bool:
@@ -204,9 +237,11 @@ def _is_meaningful_chip_distribution(chip: Any) -> bool:
 
 
 def _market_tag(code: str) -> str:
-    """返回市场标签: cn/us/hk."""
+    """返回市场标签: cn/us/hk/tw."""
     if _is_us_market(code):
         return "us"
+    if _is_tw_market(code):
+        return "tw"
     if _is_hk_market(code):
         return "hk"
     return "cn"
@@ -573,6 +608,7 @@ class DataFetcherManager:
         "LongbridgeFetcher": {"hk", "us"},
         "FinnhubFetcher": {"us"},
         "AlphaVantageFetcher": {"us"},
+        "ShioajiTwFetcher": {"tw"},
     }
 
     def __init__(self, fetchers: Optional[List[BaseFetcher]] = None):
@@ -695,7 +731,7 @@ class DataFetcherManager:
         market: str,
     ) -> List[BaseFetcher]:
         """Skip built-in daily fetchers that are known not to support a market."""
-        if market not in {"cn", "hk", "us"}:
+        if market not in {"cn", "hk", "us", "tw"}:
             return fetchers
 
         kept: List[BaseFetcher] = []
@@ -1092,6 +1128,15 @@ class DataFetcherManager:
         else:
             logger.debug("[数据源初始化] 跳过未配置的 AlphaVantageFetcher")
 
+        # 台股 Shioaji 数据源：仅在配置了永丰金 API Key/Secret 时实例化（懒登录）
+        shioaji_api_key = (getattr(config, "shioaji_api_key", None) or "").strip()
+        shioaji_secret_key = (getattr(config, "shioaji_secret_key", None) or "").strip()
+        if shioaji_api_key and shioaji_secret_key:
+            from .shioaji_tw_fetcher import ShioajiTwFetcher
+            optional_fetchers.append(ShioajiTwFetcher())
+        else:
+            logger.debug("[数据源初始化] 跳过未配置的 ShioajiTwFetcher")
+
         # 初始化数据源列表
         self._ensure_concurrency_guards()
         with self._fetchers_lock:
@@ -1164,14 +1209,17 @@ class DataFetcherManager:
         #   - 美股指数:       始终 YFinance 为首选（Longbridge 不提供指数K线）
         is_us_index = is_us_index_code(stock_code)
         is_us = is_us_index or is_us_stock_code(stock_code)
-        is_hk = (not is_us) and _is_hk_market(stock_code)
+        is_tw = (not is_us) and _is_tw_market(stock_code)
+        is_hk = (not is_us) and (not is_tw) and _is_hk_market(stock_code)
         if is_hk:
             fetchers = self._filter_daily_fetchers_for_market(fetchers, "hk")
+        elif is_tw:
+            fetchers = self._filter_daily_fetchers_for_market(fetchers, "tw")
         fetchers = self._filter_fetchers_by_capability(fetchers, capability="daily_data")
         total_fetchers = len(fetchers)
 
         if total_fetchers == 0:
-            market_label = "美股指数" if is_us_index else "美股" if is_us else "港股" if is_hk else "A股"
+            market_label = "美股指数" if is_us_index else "美股" if is_us else "台股" if is_tw else "港股" if is_hk else "A股"
             error_summary = f"{market_label} {stock_code} 获取失败:\n暂无可用数据源"
             logger.error(f"[数据源终止] {stock_code} 获取失败: {error_summary}")
             raise DataFetchError(error_summary)
@@ -1543,7 +1591,34 @@ class DataFetcherManager:
         # ----------------------------------------------------------
         is_us_index = is_us_index_code(stock_code)
         is_us = is_us_index or _is_us_code(stock_code)
-        is_hk = (not is_us) and _is_hk_market(stock_code)
+        is_tw = (not is_us) and _is_tw_market(stock_code)
+        is_hk = (not is_us) and (not is_tw) and _is_hk_market(stock_code)
+
+        # 台股：专用单源路由（Shioaji 快照）。台股代码与 A 股/港股纯数字重叠，
+        # 必须在通用 source_priority 循环之前拦截，避免被东财/新浪等误查。
+        if is_tw:
+            fetcher = self._get_fetcher_by_name("ShioajiTwFetcher", capability="realtime_quote")
+            quote = None
+            if fetcher is not None and hasattr(fetcher, "get_realtime_quote"):
+                try:
+                    quote = self._call_fetcher_method(fetcher, "get_realtime_quote", stock_code)
+                except Exception as e:
+                    error_type, error_reason = summarize_exception(e)
+                    logger.info(
+                        f"[实时行情] 台股 {stock_code} ShioajiTwFetcher 失败: "
+                        f"{error_type} {error_reason}"
+                    )
+                    quote = None
+            if quote is not None and quote.has_basic_data():
+                logger.info(f"[实时行情] 台股 {stock_code} 成功获取 (来源: ShioajiTwFetcher)")
+                return self._enrich_realtime_quote(
+                    quote,
+                    fallback_from=None,
+                    realtime_cache_ttl=getattr(config, "realtime_cache_ttl", None),
+                )
+            if log_final_failure:
+                logger.info(f"[实时行情] 台股 {stock_code} 无可用数据源")
+            return None
 
         if is_us or is_hk:
             prefer_lb = self._longbridge_preferred() and not is_us_index
@@ -1956,11 +2031,17 @@ class DataFetcherManager:
         # 3. 依次尝试各个数据源
         from .akshare_fetcher import _is_us_code
         is_us = _is_us_code(stock_code)
+        is_tw = _is_tw_market(stock_code)
         _US_CAPABLE_FETCHERS = {"YfinanceFetcher", "LongbridgeFetcher", "FinnhubFetcher", "AlphaVantageFetcher"}
+        _TW_CAPABLE_FETCHERS = {"ShioajiTwFetcher"}
         for fetcher in self._get_fetchers_snapshot():
             if not hasattr(fetcher, 'get_stock_name'):
                 continue
             if is_us and fetcher.name not in _US_CAPABLE_FETCHERS:
+                continue
+            if is_tw and fetcher.name not in _TW_CAPABLE_FETCHERS:
+                continue
+            if (not is_tw) and fetcher.name in _TW_CAPABLE_FETCHERS:
                 continue
             if not self._is_fetcher_available(fetcher, capability="stock_name"):
                 continue

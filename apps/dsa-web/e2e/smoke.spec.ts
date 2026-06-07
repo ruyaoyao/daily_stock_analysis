@@ -171,7 +171,17 @@ test.describe('web smoke', () => {
     await expect(page.getByRole('link', { name: '设置' })).toBeVisible();
     await expect(page.getByRole('link', { name: '首页' })).toBeVisible();
 
+    // zh -> zh-Hant (Traditional Chinese)
     await languageToggle.click();
+
+    const traditionalLanguageToggle = page.getByRole('button', { name: '切換介面語言' });
+    await expect(traditionalLanguageToggle).toBeVisible();
+    await expect(page.getByRole('link', { name: '設定' })).toBeVisible();
+    await expect(page.getByRole('link', { name: '首頁' })).toBeVisible();
+    expect(await page.evaluate(() => localStorage.getItem('dsa.uiLanguage'))).toBe('zh-Hant');
+
+    // zh-Hant -> en
+    await traditionalLanguageToggle.click();
 
     const englishLanguageToggle = page.getByRole('button', { name: 'Switch UI language' });
     await expect(englishLanguageToggle).toBeVisible();

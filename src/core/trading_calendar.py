@@ -36,19 +36,20 @@ except ImportError:
     )
 
 # Market -> exchange code (exchange-calendars)
-MARKET_EXCHANGE = {"cn": "XSHG", "hk": "XHKG", "us": "XNYS"}
+MARKET_EXCHANGE = {"cn": "XSHG", "hk": "XHKG", "us": "XNYS", "tw": "XTAI"}
 
 # Market -> IANA timezone for "today"
 MARKET_TIMEZONE = {
     "cn": "Asia/Shanghai",
     "hk": "Asia/Hong_Kong",
     "us": "America/New_York",
+    "tw": "Asia/Taipei",
 }
 
 # P0 market phase baseline (Issue #1386). This is an intentionally small
 # regular-session inference layer; it does not change existing fail-open
 # trading-day filtering or effective-date behavior.
-_CLOSING_AUCTION_WINDOW_MINUTES = {"cn": 3, "hk": 10, "us": 5}
+_CLOSING_AUCTION_WINDOW_MINUTES = {"cn": 3, "hk": 10, "us": 5, "tw": 5}
 _SUPPORTED_ANALYSIS_PHASES = {
     "auto",
     "premarket",
@@ -111,16 +112,25 @@ def get_market_for_stock(code: str) -> Optional[str]:
     Infer market region for a stock code.
 
     Returns:
-        'cn' | 'hk' | 'us' | None (None = unrecognized, fail-open: treat as open)
+        'cn' | 'hk' | 'us' | 'tw' | None (None = unrecognized, fail-open: treat as open)
     """
     if not code or not isinstance(code, str):
         return None
     code = (code or "").strip().upper()
 
-    from data_provider import is_us_stock_code, is_us_index_code, is_hk_stock_code
+    from data_provider import (
+        is_us_stock_code,
+        is_us_index_code,
+        is_hk_stock_code,
+        is_tw_stock_code,
+    )
 
     if is_us_stock_code(code) or is_us_index_code(code):
         return "us"
+    # Taiwan codes require an explicit TW prefix / .TW(.TWO) suffix, so this is
+    # checked before HK/CN numeric heuristics to avoid mis-routing.
+    if is_tw_stock_code(code):
+        return "tw"
     if is_hk_stock_code(code):
         return "hk"
     # A-share: 6-digit numeric
@@ -506,15 +516,61 @@ def build_market_phase_context(
     )
 
 
+_ALL_MARKETS = ("cn", "hk", "us", "tw")
+
+
+def get_enabled_markets(config: Any = None) -> Set[str]:
+    """
+    Return the set of markets enabled via config switches (default: all enabled).
+
+    A disabled market means its stocks are not fetched/analyzed and it is excluded
+    from market review. Unknown/missing config falls back to all-enabled.
+    """
+    if config is None:
+        try:
+            from src.config import get_config
+
+            config = get_config()
+        except Exception as e:
+            logger.warning("get_enabled_markets fail-open (all enabled): %s", e)
+            return set(_ALL_MARKETS)
+    return {
+        market
+        for market in _ALL_MARKETS
+        if bool(getattr(config, f"market_{market}_enabled", True))
+    }
+
+
+def filter_codes_by_enabled_markets(
+    codes: List[str], config: Any = None
+) -> Tuple[List[str], List[str]]:
+    """
+    Split stock codes into (kept, skipped) by per-market enable switches.
+
+    Codes whose market cannot be recognized (get_market_for_stock -> None) are kept
+    (fail-open), so unknown formats never silently disappear.
+    """
+    enabled = get_enabled_markets(config)
+    kept: List[str] = []
+    skipped: List[str] = []
+    for code in codes:
+        market = get_market_for_stock(code)
+        if market is None or market in enabled:
+            kept.append(code)
+        else:
+            skipped.append(code)
+    return kept, skipped
+
+
 def get_open_markets_today() -> Set[str]:
     """
     Get markets that are open today (by each market's local timezone).
 
     Returns:
-        Set of market keys ('cn', 'hk', 'us') that are trading today
+        Set of market keys ('cn', 'hk', 'us', 'tw') that are trading today
     """
     if not _XCALS_AVAILABLE:
-        return {"cn", "hk", "us"}
+        return {"cn", "hk", "us", "tw"}
     result: Set[str] = set()
     for mkt, tz_name in MARKET_TIMEZONE.items():
         try:
@@ -535,19 +591,20 @@ def compute_effective_region(
     Compute effective market review region given config and open markets.
 
     Args:
-        config_region: From MARKET_REVIEW_REGION ('cn' | 'hk' | 'us' | 'both')
+        config_region: From MARKET_REVIEW_REGION ('cn' | 'hk' | 'us' | 'tw' | 'both')
         open_markets: Markets open today
 
     Returns:
         None: caller uses config default (check disabled)
         '': all relevant markets closed, skip market review
-        'cn' | 'hk' | 'us' | 'both': effective subset for today
+        'cn' | 'hk' | 'us' | 'tw' | 'both': effective subset for today
     """
-    if config_region not in ("cn", "hk", "us", "both"):
+    if config_region not in ("cn", "hk", "us", "tw", "both"):
         config_region = "cn"
-    if config_region in ("cn", "hk", "us"):
+    if config_region in ("cn", "hk", "us", "tw"):
         return config_region if config_region in open_markets else ""
-    # both: return only the markets that are actually open today
+    # both: legacy alias for cn+hk+us only (tw is opt-in via MARKET_REVIEW_REGION=tw
+    # to avoid silently adding a Taiwan section to existing "both" users' reports).
     parts = [m for m in ("cn", "hk", "us") if m in open_markets]
     if not parts:
         return ""

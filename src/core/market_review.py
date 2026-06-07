@@ -32,9 +32,13 @@ _MARKET_REVIEW_MARKETS = (
     ('cn', 'cn_title', 'A 股'),
     ('hk', 'hk_title', '港股'),
     ('us', 'us_title', '美股'),
+    ('tw', 'tw_title', '台股'),
 )
 _MARKET_REVIEW_REGION_ORDER = tuple(market for market, _, _ in _MARKET_REVIEW_MARKETS)
 _VALID_MARKET_REVIEW_REGIONS = frozenset(_MARKET_REVIEW_REGION_ORDER)
+# 'both' 为历史别名，仅展开为 cn+hk+us；台股需以 MARKET_REVIEW_REGION=tw（或显式 cn,tw 等组合）选取，
+# 避免静默改变既有 'both' 用户的报告结构。
+_BOTH_REGION_ORDER = ('cn', 'hk', 'us')
 
 
 @dataclass
@@ -54,6 +58,7 @@ def _get_market_review_text(language: str) -> dict[str, str]:
             "cn_title": "# A-share Market Recap",
             "us_title": "# US Market Recap",
             "hk_title": "# HK Market Recap",
+            "tw_title": "# Taiwan Market Recap",
             "separator": "> Next market recap follows",
         }
     return {
@@ -62,26 +67,40 @@ def _get_market_review_text(language: str) -> dict[str, str]:
         "cn_title": "# A股大盘复盘",
         "us_title": "# 美股大盘复盘",
         "hk_title": "# 港股大盘复盘",
+        "tw_title": "# 台股大盘复盘",
         "separator": "> 以下为下一市场大盘复盘",
     }
 
 
-def _resolve_market_review_regions(raw_region: Optional[str]) -> list[str]:
-    """Normalize MARKET_REVIEW_REGION into an ordered, non-empty region list."""
+def _resolve_market_review_regions(
+    raw_region: Optional[str],
+    enabled_markets: Optional[set] = None,
+) -> list[str]:
+    """Normalize MARKET_REVIEW_REGION into an ordered region list.
+
+    When ``enabled_markets`` is provided, markets disabled via per-market switches
+    are dropped. The result may be empty (all requested markets disabled), in which
+    case the caller should skip market review.
+    """
 
     region = str(raw_region or 'cn').strip().lower()
     if region == 'both':
-        return list(_MARKET_REVIEW_REGION_ORDER)
-    if ',' in region:
+        resolved = list(_BOTH_REGION_ORDER)
+    elif ',' in region:
         requested = {
             item.strip().lower()
             for item in region.split(',')
             if item.strip().lower() in _VALID_MARKET_REVIEW_REGIONS
         }
-        return [market for market in _MARKET_REVIEW_REGION_ORDER if market in requested] or ['cn']
-    if region in _VALID_MARKET_REVIEW_REGIONS:
-        return [region]
-    return ['cn']
+        resolved = [market for market in _MARKET_REVIEW_REGION_ORDER if market in requested] or ['cn']
+    elif region in _VALID_MARKET_REVIEW_REGIONS:
+        resolved = [region]
+    else:
+        resolved = ['cn']
+
+    if enabled_markets is not None:
+        resolved = [market for market in resolved if market in enabled_markets]
+    return resolved
 
 
 def run_market_review(
@@ -119,7 +138,14 @@ def run_market_review(
         if override_region is not None
         else (getattr(runtime_config, 'market_review_region', 'cn') or 'cn')
     )
-    run_markets = _resolve_market_review_regions(raw_region)
+    from src.core.trading_calendar import get_enabled_markets
+
+    run_markets = _resolve_market_review_regions(
+        raw_region, enabled_markets=get_enabled_markets(runtime_config)
+    )
+    if not run_markets:
+        logger.info("所有大盘复盘市场均被市场开关关闭，跳过大盘复盘")
+        return None
     persist_region = ','.join(run_markets) if len(run_markets) > 1 else run_markets[0]
 
     try:

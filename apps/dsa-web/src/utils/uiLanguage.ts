@@ -3,8 +3,26 @@ import type { UiLanguage } from '../i18n/uiText';
 export const UI_LANGUAGE_STORAGE_KEY = 'dsa.uiLanguage';
 
 export function normalizeUiLanguage(value?: string | null): UiLanguage | null {
-  if (value === 'zh' || value === 'en') {
-    return value;
+  if (!value) {
+    return null;
+  }
+  const normalized = value.toLowerCase().replace('_', '-');
+  if (normalized === 'en' || normalized.startsWith('en-')) {
+    return 'en';
+  }
+  // Traditional Chinese variants (Taiwan / Hong Kong / Macau / explicit Hant)
+  if (
+    normalized === 'zh-hant' ||
+    normalized === 'zh-tw' ||
+    normalized === 'zh-hk' ||
+    normalized === 'zh-mo' ||
+    normalized.startsWith('zh-hant')
+  ) {
+    return 'zh-Hant';
+  }
+  // Simplified Chinese (default for generic zh / zh-CN / zh-Hans / zh-SG)
+  if (normalized === 'zh' || normalized.startsWith('zh')) {
+    return 'zh';
   }
   return null;
 }
@@ -52,12 +70,9 @@ function getBrowserUiLanguage(navigatorLike?: Pick<Navigator, 'language' | 'lang
   ].filter((language): language is string => Boolean(language));
 
   for (const candidate of languageCandidates) {
-    const normalized = candidate.toLowerCase();
-    if (normalized.startsWith('zh')) {
-      return 'zh';
-    }
-    if (normalized.startsWith('en')) {
-      return 'en';
+    const resolved = normalizeUiLanguage(candidate);
+    if (resolved) {
+      return resolved;
     }
   }
 

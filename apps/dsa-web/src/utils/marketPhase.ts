@@ -57,7 +57,7 @@ const TEXT = {
 
 export const getRequestedPhaseLabel = (
   phase?: AnalysisPhase | null,
-  language?: ReportLanguage | null,
+  language?: string | null,
 ): string | null => {
   if (!phase) {
     return null;
@@ -74,7 +74,7 @@ export const getRequestedPhaseLabel = (
 
 export const getMarketPhaseSummaryLabel = (
   summary?: MarketPhaseSummary | null,
-  language?: ReportLanguage | null,
+  language?: string | null,
 ): string | null => {
   if (!summary) {
     return null;

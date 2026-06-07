@@ -329,6 +329,8 @@ class YfinanceFetcher(BaseFetcher):
             return self._get_us_main_indices(yf)
         if region == "hk":
             return self._get_hk_main_indices(yf)
+        if region == "tw":
+            return self._get_tw_main_indices(yf)
 
         # A 股指数：akshare 代码 -> (yfinance 代码, 显示名称)
         yf_mapping = {
@@ -416,6 +418,38 @@ class YfinanceFetcher(BaseFetcher):
 
         except Exception as e:
             logger.error(f"[Yfinance] 获取港股指数行情失败: {e}")
+
+        return None
+
+    def _get_tw_main_indices(self, yf) -> Optional[List[Dict[str, Any]]]:
+        """获取台股主要指数行情（加权指数 TAIEX、柜买指数 TPEx），复用 _fetch_yf_ticker_data。
+
+        Yahoo Finance 台股指数符号：
+        - 加权指数 TAIEX -> ^TWII
+        - 柜买指数 TPEx   -> ^TWOII
+        return_code 用作 mood_index_code 匹配（TW_PROFILE.mood_index_code='TWII'）。
+        """
+        tw_indices = {
+            'TWII': ('^TWII', '加权指数'),
+            'TWOII': ('^TWOII', '柜买指数'),
+        }
+        results = []
+        try:
+            for return_code, (yf_symbol, name) in tw_indices.items():
+                try:
+                    item = self._fetch_yf_ticker_data(yf, yf_symbol, name, return_code)
+                    if item:
+                        results.append(item)
+                        logger.debug(f"[Yfinance] 获取台股指数 {name} 成功")
+                except Exception as e:
+                    logger.warning(f"[Yfinance] 获取台股指数 {name} 失败: {e}")
+
+            if results:
+                logger.info(f"[Yfinance] 成功获取 {len(results)} 个台股指数行情")
+                return results
+
+        except Exception as e:
+            logger.error(f"[Yfinance] 获取台股指数行情失败: {e}")
 
         return None
 

@@ -634,6 +634,18 @@ class Config:
     longbridge_app_secret: Optional[str] = None
     longbridge_access_token: Optional[str] = None
     longbridge_oauth_client_id: Optional[str] = None
+    # === 台股 Shioaji（永丰金）配置 ===
+    shioaji_api_key: Optional[str] = None
+    shioaji_secret_key: Optional[str] = None
+    shioaji_person_id: Optional[str] = None
+    shioaji_ca_path: Optional[str] = None
+    shioaji_ca_password: Optional[str] = None
+    shioaji_simulation: bool = False
+    # === 市场总开关（默认全开；关闭后该市场个股不抓取/不分析，且不纳入大盘复盘）===
+    market_cn_enabled: bool = True
+    market_hk_enabled: bool = True
+    market_us_enabled: bool = True
+    market_tw_enabled: bool = True
     stock_index_remote_update_enabled: bool = True
 
     # === AlphaSift optional stock screening integration ===
@@ -1439,6 +1451,19 @@ class Config:
             longbridge_app_secret=os.getenv('LONGBRIDGE_APP_SECRET') or None,
             longbridge_access_token=os.getenv('LONGBRIDGE_ACCESS_TOKEN') or None,
             longbridge_oauth_client_id=os.getenv('LONGBRIDGE_OAUTH_CLIENT_ID') or None,
+            shioaji_api_key=os.getenv('SHIOAJI_API_KEY') or None,
+            shioaji_secret_key=os.getenv('SHIOAJI_SECRET_KEY') or None,
+            shioaji_person_id=os.getenv('SHIOAJI_PERSON_ID') or None,
+            shioaji_ca_path=os.getenv('SHIOAJI_CA_PATH') or None,
+            shioaji_ca_password=os.getenv('SHIOAJI_CA_PASSWORD') or None,
+            shioaji_simulation=parse_env_bool(
+                os.getenv('SHIOAJI_SIMULATION'),
+                default=False,
+            ),
+            market_cn_enabled=parse_env_bool(os.getenv('MARKET_CN_ENABLED'), default=True),
+            market_hk_enabled=parse_env_bool(os.getenv('MARKET_HK_ENABLED'), default=True),
+            market_us_enabled=parse_env_bool(os.getenv('MARKET_US_ENABLED'), default=True),
+            market_tw_enabled=parse_env_bool(os.getenv('MARKET_TW_ENABLED'), default=True),
             stock_index_remote_update_enabled=parse_env_bool(
                 os.getenv('STOCK_INDEX_REMOTE_UPDATE_ENABLED'),
                 default=True,
@@ -2234,7 +2259,7 @@ class Config:
         raw = (value or "").strip()
         if raw and not is_supported_report_language_value(raw):
             logging.getLogger(__name__).warning(
-                "REPORT_LANGUAGE '%s' invalid, fallback to 'zh' (valid: zh/en)",
+                "REPORT_LANGUAGE '%s' invalid, fallback to 'zh' (valid: zh/zh-Hant/en)",
                 value,
             )
         return normalized
@@ -2264,10 +2289,10 @@ class Config:
         """解析大盘复盘市场区域，非法值记录警告后回退为 cn"""
         import logging
         v = (value or 'cn').strip().lower()
-        if v in ('cn', 'us', 'hk', 'both'):
+        if v in ('cn', 'us', 'hk', 'tw', 'both'):
             return v
         logging.getLogger(__name__).warning(
-            f"MARKET_REVIEW_REGION 配置值 '{value}' 无效，已回退为默认值 'cn'（合法值：cn / hk / us / both）"
+            f"MARKET_REVIEW_REGION 配置值 '{value}' 无效，已回退为默认值 'cn'（合法值：cn / hk / us / tw / both）"
         )
         return 'cn'
 

@@ -137,7 +137,7 @@ class MarketAnalyzer:
         self.search_service = search_service
         self.analyzer = analyzer
         self.data_manager = DataFetcherManager()
-        self.region = region if region in ("cn", "us", "hk") else "cn"
+        self.region = region if region in ("cn", "us", "hk", "tw") else "cn"
         self.profile: MarketProfile = get_profile(self.region)
         self.strategy = get_market_strategy_blueprint(self.region)
 
@@ -465,6 +465,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             "cn": "大盘" if review_language == "zh" else "A-share market",
             "us": "美股市场" if review_language == "zh" else "US market",
             "hk": "港股市场" if review_language == "zh" else "HK market",
+            "tw": "台股市場" if review_language == "zh" else "Taiwan market",
         }
         
         try:

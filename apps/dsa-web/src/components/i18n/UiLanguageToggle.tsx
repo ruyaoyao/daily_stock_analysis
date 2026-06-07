@@ -1,9 +1,17 @@
 import type React from 'react';
 import { Languages } from 'lucide-react';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
+import type { UiLanguage } from '../../i18n/uiText';
 import { cn } from '../../utils/cn';
 
 type UiLanguageToggleVariant = 'default' | 'nav' | 'rail';
+
+// 三语循环：简体 -> 繁体 -> English -> 简体
+const NEXT_LANGUAGE: Record<UiLanguage, UiLanguage> = {
+  zh: 'zh-Hant',
+  'zh-Hant': 'en',
+  en: 'zh',
+};
 
 interface UiLanguageToggleProps {
   variant?: UiLanguageToggleVariant;
@@ -25,10 +33,14 @@ export const UiLanguageToggle: React.FC<UiLanguageToggleProps> = ({
   labelClassName,
 }) => {
   const { language, setLanguage, t } = useUiLanguage();
-  const nextLanguage = language === 'zh' ? 'en' : 'zh';
+  const nextLanguage = NEXT_LANGUAGE[language];
   const isNavVariant = variant === 'nav';
   const isRailVariant = variant === 'rail';
-  const label = language === 'zh' ? t('language.uiLanguage') : t('language.current');
+  // 显示当前语言自身名称（中文 / 繁體中文 / English）
+  const label = t('language.current');
+  // rail 短标签：繁体用字面量「繁」，简体/英文沿用既有 uiText key
+  const shortLabel =
+    language === 'zh-Hant' ? '繁' : language === 'zh' ? t('language.short.zh') : t('language.short.en');
 
   return (
     <div className={cn('relative', isRailVariant ? 'w-full' : '', wrapperClassName)}>
@@ -51,7 +63,7 @@ export const UiLanguageToggle: React.FC<UiLanguageToggleProps> = ({
       >
         <Languages className={iconClassName ?? cn('shrink-0', isRailVariant ? 'h-[18px] w-[18px]' : isNavVariant ? 'h-5 w-5' : 'h-4 w-4')} />
         {isRailVariant ? (
-          <span className={labelClassName}>{language === 'zh' ? t('language.short.zh') : t('language.short.en')}</span>
+          <span className={labelClassName}>{shortLabel}</span>
         ) : isNavVariant ? (
           collapsed ? null : <span className="truncate text-[1.02rem] font-medium">{label}</span>
         ) : (

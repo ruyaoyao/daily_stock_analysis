@@ -30,7 +30,8 @@
 提示：优先级数字越小越优先，同优先级按初始化顺序排列
 """
 
-from .base import BaseFetcher, DataFetcherManager
+from .base import BaseFetcher, DataFetcherManager, is_tw_stock_code
+from .shioaji_tw_fetcher import ShioajiTwFetcher
 from .efinance_fetcher import EfinanceFetcher
 from .akshare_fetcher import AkshareFetcher, is_hk_stock_code
 from .tushare_fetcher import TushareFetcher
@@ -45,6 +46,8 @@ from .us_index_mapping import is_us_index_code, is_us_stock_code, get_us_index_y
 __all__ = [
     'BaseFetcher',
     'DataFetcherManager',
+    'ShioajiTwFetcher',
+    'is_tw_stock_code',
     'EfinanceFetcher',
     'AkshareFetcher',
     'TushareFetcher',

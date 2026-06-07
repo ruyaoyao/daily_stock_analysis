@@ -67,10 +67,27 @@ HK_PROFILE = MarketProfile(
 )
 
 
+TW_PROFILE = MarketProfile(
+    region="tw",
+    mood_index_code="TWII",
+    news_queries=[
+        "台股 大盤 復盤",
+        "Taiwan stock market",
+        "加權指數 行情",
+    ],
+    prompt_index_hint="分析加權指數（TAIEX）、櫃買指數等台股各指數走勢特點",
+    # 台股的涨跌家数 / 板块榜暂无对应免密钥数据源，保持 False（仅做指数级复盘）
+    has_market_stats=False,
+    has_sector_rankings=False,
+)
+
+
 def get_profile(region: str) -> MarketProfile:
     """根据 region 返回对应的 MarketProfile"""
     if region == "us":
         return US_PROFILE
     if region == "hk":
         return HK_PROFILE
+    if region == "tw":
+        return TW_PROFILE
     return CN_PROFILE

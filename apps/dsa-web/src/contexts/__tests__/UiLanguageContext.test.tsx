@@ -102,7 +102,30 @@ describe('UiLanguageContext', () => {
     }
   });
 
-  it('switches UI language immediately and persists the explicit choice', () => {
+  it('resolves Traditional Chinese variants to zh-Hant', () => {
+    expect(resolveInitialUiLanguage({
+      storage: createStorage('zh-Hant'),
+      navigatorLike: { language: 'en-US', languages: ['en-US'] },
+    })).toBe('zh-Hant');
+
+    expect(resolveInitialUiLanguage({
+      storage: createStorage(null),
+      navigatorLike: { language: 'zh-TW', languages: ['zh-TW'] },
+    })).toBe('zh-Hant');
+
+    expect(resolveInitialUiLanguage({
+      storage: createStorage(null),
+      navigatorLike: { language: 'zh-HK', languages: ['zh-HK'] },
+    })).toBe('zh-Hant');
+
+    // Generic / Simplified zh stays 'zh'
+    expect(resolveInitialUiLanguage({
+      storage: createStorage(null),
+      navigatorLike: { language: 'zh-CN', languages: ['zh-CN'] },
+    })).toBe('zh');
+  });
+
+  it('cycles UI language zh -> zh-Hant -> en -> zh and persists each step', () => {
     localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, 'zh');
 
     render(
@@ -111,13 +134,23 @@ describe('UiLanguageContext', () => {
       </UiLanguageProvider>
     );
 
+    // Label now shows the current language's own name (中文 / 繁體中文 / English)
+    expect(screen.getByText('中文')).toBeInTheDocument();
     const toggle = screen.getByRole('button', { name: '切换界面语言' });
-    expect(screen.getByText('界面语言')).toBeInTheDocument();
 
+    // zh -> zh-Hant
     fireEvent.click(toggle);
+    expect(localStorage.getItem(UI_LANGUAGE_STORAGE_KEY)).toBe('zh-Hant');
+    expect(screen.getByText('繁體中文')).toBeInTheDocument();
 
+    // zh-Hant -> en
+    fireEvent.click(screen.getByRole('button'));
     expect(localStorage.getItem(UI_LANGUAGE_STORAGE_KEY)).toBe('en');
-    expect(screen.getByRole('button', { name: 'Switch UI language' })).toBeInTheDocument();
     expect(screen.getByText('English')).toBeInTheDocument();
+
+    // en -> zh
+    fireEvent.click(screen.getByRole('button', { name: 'Switch UI language' }));
+    expect(localStorage.getItem(UI_LANGUAGE_STORAGE_KEY)).toBe('zh');
+    expect(screen.getByText('中文')).toBeInTheDocument();
   });
 });

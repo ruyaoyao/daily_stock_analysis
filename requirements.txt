@@ -17,6 +17,7 @@ pytdx>=1.72                 # Priority 2: Tongdaxin quote servers
 baostock>=0.8.0             # Priority 3: Baostock data
 yfinance>=0.2.0             # Priority 4: Yahoo Finance (Fallback)
 longbridge>=0.2.77           # Priority 5: Longbridge OpenAPI fallback for US/HK stocks; OAuth capability checked at runtime
+shioaji>=1.2.0              # Taiwan stocks (SinoPac Shioaji); optional, instantiated only when SHIOAJI_API_KEY/SECRET set
 tickflow>=0.1.0            # TickFlow official SDK (Issue #632, market review enhancement)
 # Built-in optional AlphaSift screening engine
 git+https://github.com/ZhuLinsen/alphasift.git@1a0ed8c99b3615c0cb1076e6029827ffc6de2344#egg=alphasift
@@ -37,6 +38,9 @@ litellm>=1.80.10,!=1.82.7,!=1.82.8,<2.0.0   # Unified LLM client (Gemini/Anthrop
 tiktoken>=0.8.0,<0.12.0    # BPE tokenizer for LLM token counting (pin <0.12 to avoid plugin registration issues, #537)
 openai>=1.0.0               # OpenAI SDK (transitive dependency of litellm, kept explicit)
 PyYAML>=6.0                 # YAML parser for LITELLM_CONFIG support
+
+# Traditional Chinese report output
+opencc>=1.1.0               # Optional: Simplified->Traditional (Taiwan, s2twp) for REPORT_LANGUAGE=zh-Hant; graceful no-op if absent
 
 # Search engines for stock news
 tavily-python>=0.3.0        # Tavily Search API

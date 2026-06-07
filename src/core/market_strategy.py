@@ -163,10 +163,46 @@ HK_BLUEPRINT = MarketStrategyBlueprint(
 )
 
 
+TW_BLUEPRINT = MarketStrategyBlueprint(
+    region="tw",
+    title="台股市場三段式復盤策略",
+    positioning="聚焦加權指數趨勢、三大法人籌碼動向與類股輪動，形成次日交易計畫。",
+    principles=[
+        "先看加權／櫃買指數方向，再看三大法人買賣超，最後看類股持續性。",
+        "結論必須對應到部位、節奏與風險控制動作。",
+        "判斷使用當日資料與近3日新聞，不臆測未驗證資訊。",
+    ],
+    dimensions=[
+        StrategyDimension(
+            name="趨勢結構",
+            objective="判斷市場處於上升、震盪還是防守階段。",
+            checkpoints=["加權／櫃買指數是否同向", "放量上漲或縮量下跌是否成立", "關鍵支撐壓力是否被突破"],
+        ),
+        StrategyDimension(
+            name="籌碼情緒",
+            objective="識別三大法人與融資融券的風險偏好。",
+            checkpoints=["外資／投信買賣超方向與規模", "融資融券餘額變化", "成交量是否擴張"],
+        ),
+        StrategyDimension(
+            name="主流類股",
+            objective="提煉可交易主流與規避方向。",
+            checkpoints=["領漲類股是否具備事件催化", "權值股是否帶動指數", "領跌類股是否擴散"],
+        ),
+    ],
+    action_framework=[
+        "進攻：指數共振上行 + 法人同步買超 + 主流強化。",
+        "均衡：指數分化或縮量震盪，控制部位並等待確認。",
+        "防守：指數轉弱 + 法人賣超擴散，優先風控與減碼。",
+    ],
+)
+
+
 def get_market_strategy_blueprint(region: str) -> MarketStrategyBlueprint:
     """Return strategy blueprint by market region."""
     if region == "us":
         return US_BLUEPRINT
     if region == "hk":
         return HK_BLUEPRINT
+    if region == "tw":
+        return TW_BLUEPRINT
     return CN_BLUEPRINT

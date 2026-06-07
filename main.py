@@ -508,8 +508,17 @@ def run_full_analysis(
         if stock_codes is None:
             config.refresh_stock_list()
 
-        # Issue #373: Trading day filter (per-stock, per-market)
+        # Per-market enable switches: drop stocks whose market is disabled
+        # (applies unconditionally, independent of trading-day check / --force-run).
         effective_codes = stock_codes if stock_codes is not None else config.stock_list
+        from src.core.trading_calendar import filter_codes_by_enabled_markets
+        effective_codes, market_disabled_codes = filter_codes_by_enabled_markets(
+            effective_codes, config
+        )
+        if market_disabled_codes:
+            logger.info("市场开关已关闭，跳过这些股票: %s", market_disabled_codes)
+
+        # Issue #373: Trading day filter (per-stock, per-market)
         filtered_codes, effective_region, should_skip = _compute_trading_day_filter(
             config, args, effective_codes
         )
