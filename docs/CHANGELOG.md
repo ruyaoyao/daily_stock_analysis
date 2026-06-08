@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 台股大盘复盘櫃買指數改用 TPEx OpenAPI（`tpex_index`，无需 Key），修复 yfinance `^TWOII` 数据滞后/不准（如显示前一交易日点位）；并补齐指数级成交额：加權指數取 TWSE `FMTQIK`、櫃買指數取 TPEx `tpex_daily_trading_index`，修复指数表「成交額(億)」列显示 N/A。TPEx 取数失败时回退 yfinance。
+- [修复] `LITELLM_MODEL` / `GEMINI_MODEL` 误填逗号并列时自动拆分为 primary + fallback，避免 LiteLLM 报 invalid model 格式错误。
+- [修复] 台股大盘复盘新闻过滤 crypto/英文噪声（如 Binance/Moomoo「覆盤」），并收紧 `TW_PROFILE.news_queries` 为台股指数/法人相关关键词。
+- [修复] 台股大盘复盘 prompt 开头误显示「A股市場」：`region=tw` 时 `_get_market_scope_name()` 返回「台股市場」；`zh-Hant` 下搜索上下文亦使用中文市场名。
 - [新功能] 台股大盘复盘补齐涨跌家数、成交额与类股涨跌幅：经 TWSE OpenAPI（无需 Key）取 `STOCK_DAY_ALL`（逐档涨跌→上市涨跌/涨跌停家数）、`FMTQIK`（成交额+加权指数）、`MI_INDEX`（各类股指数涨跌幅）；`TW_PROFILE.has_market_stats/has_sector_rankings` 置 True，`DataFetcherManager.get_market_stats/get_sector_rankings` 增加 `region` 路由（tw→TWSE）。复盘报告不再出现「数据源未提供漲跌家數/成交額/板塊漲跌幅」之类降级说明；单一来源失败优雅降级。
 - [修复] 台股大盘复盘（`MARKET_REVIEW_REGION=tw`）报「大盘复盘未返回可持久化报告」：`MarketLightSnapshot.region` 仅允许 `cn/hk/us`，构建 `region='tw'` 快照时 Pydantic 校验失败导致复盘中断；`MarketRegion` 增加 `tw`，台股复盘可正常生成并持久化（市场红绿灯告警仍维持 cn/hk/us）。
 - [改进] 台股即时报价补齐 `volume_ratio`（直接取自 Shioaji 快照）与 `amplitude`（由当日高/低与昨收推导），使台股实时/趋势上下文与 A 股口径对齐（`pipeline` 读取 `quote.volume_ratio`）。

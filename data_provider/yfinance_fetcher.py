@@ -437,7 +437,28 @@ class YfinanceFetcher(BaseFetcher):
         try:
             for return_code, (yf_symbol, name) in tw_indices.items():
                 try:
-                    item = self._fetch_yf_ticker_data(yf, yf_symbol, name, return_code)
+                    item = None
+                    if return_code == 'TWOII':
+                        # 櫃買指數改用 TPEx OpenAPI（yfinance ^TWOII 数据常滞后/不准）；
+                        # 失败时回退 yfinance。
+                        try:
+                            from data_provider.twse_openapi import get_tw_otc_index
+                            item = get_tw_otc_index()
+                            if item:
+                                logger.debug("[TPEx] 獲取櫃買指數成功（OpenAPI）")
+                        except Exception as tpex_exc:
+                            logger.warning("[TPEx] 獲取櫃買指數失敗，回退 yfinance: %s", tpex_exc)
+                    if item is None:
+                        item = self._fetch_yf_ticker_data(yf, yf_symbol, name, return_code)
+                    if item and return_code == 'TWII' and not item.get('amount'):
+                        # 加權指數成交額：yfinance 不提供，改用 TWSE FMTQIK 总成交金额。
+                        try:
+                            from data_provider.twse_openapi import get_twse_total_turnover
+                            twse_turnover = get_twse_total_turnover()
+                            if twse_turnover:
+                                item['amount'] = twse_turnover
+                        except Exception as twse_exc:
+                            logger.warning("[TWSE] 獲取加權指數成交額失敗: %s", twse_exc)
                     if item:
                         results.append(item)
                         logger.debug(f"[Yfinance] 獲取台股指數 {name} 成功")

@@ -748,3 +748,82 @@ def get_tw_sector_rankings(n: int = 5) -> Optional[tuple]:
     top = sectors[:n]
     bottom = list(reversed(sectors[-n:]))
     return top, bottom
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 櫃買指數（TPEx 上柜指数）— TPEx OpenAPI（无需 Key）
+# yfinance ^TWOII 数据常滞后/不准，改用此权威来源。
+# ─────────────────────────────────────────────────────────────────────────────
+
+_TPEX_INDEX_URL = "https://www.tpex.org.tw/openapi/v1/tpex_index"
+_TPEX_DAILY_TRADING_INDEX_URL = "https://www.tpex.org.tw/openapi/v1/tpex_daily_trading_index"
+_TWSE_FMTQIK_TURNOVER_URL = "https://openapi.twse.com.tw/v1/exchangeReport/FMTQIK"
+
+
+def _tpex_latest_turnover_and_volume() -> tuple[Optional[float], Optional[float]]:
+    """TPEx（上柜）最新成交金额(元)与成交量(股)，取自 tpex_daily_trading_index。"""
+    rows = _get_json(_TPEX_DAILY_TRADING_INDEX_URL)
+    if not isinstance(rows, list) or not rows:
+        return None, None
+    for row in reversed(rows):
+        if isinstance(row, dict) and _safe_float(row.get("TradeAmount")) is not None:
+            return _safe_float(row.get("TradeAmount")), _safe_float(row.get("TradeVolume"))
+    return None, None
+
+
+def get_twse_total_turnover() -> Optional[float]:
+    """TWSE（上市）最新成交金额(元)，取自 FMTQIK TradeValue。失败返回 None。"""
+    rows = _get_json(_TWSE_FMTQIK_TURNOVER_URL)
+    if not isinstance(rows, list) or not rows:
+        return None
+    for row in reversed(rows):
+        if isinstance(row, dict):
+            tv = _safe_float(row.get("TradeValue"))
+            if tv is not None:
+                return tv
+    return None
+
+
+def get_tw_otc_index() -> Optional[dict]:
+    """櫃買指數最新行情，取自 TPEx OpenAPI；返回与 yfinance 指数项同构的 dict。
+
+    OHLC 取自 tpex_index；成交额/成交量取自 tpex_daily_trading_index（同为当日）。
+    字段: code/name/current/change/change_pct/open/high/low/prev_close/
+    volume/amount/amplitude。任何失败返回 None（调用方可回退 yfinance）。
+    """
+    rows = _get_json(_TPEX_INDEX_URL)
+    if not isinstance(rows, list) or not rows:
+        return None
+
+    last = None
+    for row in reversed(rows):
+        if isinstance(row, dict) and _safe_float(row.get("Close")) is not None:
+            last = row
+            break
+    if last is None:
+        return None
+
+    close = _safe_float(last.get("Close"))
+    change = _safe_float(last.get("Change")) or 0.0
+    open_ = _safe_float(last.get("Open")) or 0.0
+    high = _safe_float(last.get("High")) or 0.0
+    low = _safe_float(last.get("Low")) or 0.0
+    prev_close = round(close - change, 4)
+    change_pct = (change / prev_close * 100) if prev_close else 0.0
+    amplitude = ((high - low) / prev_close * 100) if prev_close else 0.0
+    amount, volume = _tpex_latest_turnover_and_volume()
+
+    return {
+        "code": "TWOII",
+        "name": "櫃買指數",
+        "current": close,
+        "change": change,
+        "change_pct": round(change_pct, 4),
+        "open": open_,
+        "high": high,
+        "low": low,
+        "prev_close": prev_close,
+        "volume": volume or 0.0,
+        "amount": amount or 0.0,
+        "amplitude": round(amplitude, 4),
+    }
