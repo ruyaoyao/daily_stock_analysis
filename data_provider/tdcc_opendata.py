@@ -22,7 +22,7 @@ _CACHE_LOCK = threading.Lock()
 _CACHE: Dict[str, Any] = {"records": None, "fetched_at": 0.0}
 _CACHE_TTL_SECONDS = 3600
 
-# TDCC numeric tier ids (see TDCC 股權分散表说明)
+# TDCC numeric tier ids (see TDCC 股權分散表說明)
 _TIER_TOTAL = 17
 _TIER_ADJUSTMENT = 16
 
@@ -87,7 +87,7 @@ def _fetch_tdcc_records(force_refresh: bool = False) -> List[Dict[str, Any]]:
             with _CACHE_LOCK:
                 _CACHE["records"] = payload
                 _CACHE["fetched_at"] = now
-            logger.info("[TDCC] 已加载股權分散表 %d 条记录 (verify=%s)", len(payload), verify)
+            logger.info("[TDCC] 已載入股權分散表 %d 條紀錄 (verify=%s)", len(payload), verify)
             return payload
         except Exception as exc:
             last_error = exc
@@ -96,7 +96,7 @@ def _fetch_tdcc_records(force_refresh: bool = False) -> List[Dict[str, Any]]:
                 continue
             break
 
-    logger.warning("[TDCC] 加载股權分散表失败: %s", last_error)
+    logger.warning("[TDCC] 載入股權分散表失敗: %s", last_error)
     with _CACHE_LOCK:
         return _CACHE.get("records") or []
 

@@ -1,28 +1,28 @@
-# 台股支持说明（Shioaji + TWSE/TPEx OpenAPI）
+# 台股支持說明（Shioaji + TWSE/TPEx OpenAPI）
 
-本文件说明本系统对台湾股市（上市 TSE / 上柜 OTC）的支持范围、配置方式与已知限制。
+本文件說明本系統對台灣股市（上市 TSE / 上櫃 OTC）的支持範圍、配置方式與已知限制。
 
-> 数据来源分工：行情（日线 K 线、即时快照、个股名称）来自永丰金 **Shioaji**；
-> 三大法人买卖超、融资融券余额来自 **TWSE / TPEx OpenAPI**（公开资料，无需金钥）；
-> 大盘指数（加权 / 柜买）来自 **yfinance**（^TWII / ^TWOII）。
+> 數據來源分工：行情（日線 K 線、即時快照、個股名稱）來自永豐金 **Shioaji**；
+> 三大法人買賣超、融資融券餘額來自 **TWSE / TPEx OpenAPI**（公開資料，無需金鑰）；
+> 大盤指數（加權 / 櫃買）來自 **yfinance**（^TWII / ^TWOII）。
 
 ---
 
-## 1. 代码格式
+## 1. 代碼格式
 
-台股代码与 A 股（6 位）/ 港股（5 位）纯数字格式重叠，因此**必须带显式 `tw` 前缀**或 `.TW` / `.TWO` 后缀，系统才会路由到台股数据源：
+台股代碼與 A 股（6 位）/ 港股（5 位）純數位格式重疊，因此**必須帶顯式 `tw` 前綴**或 `.TW` / `.TWO` 後綴，系統才會路由到台股數據源：
 
-| 输入 | 归一化 | 说明 |
+| 輸入 | 歸一化 | 說明 |
 | --- | --- | --- |
-| `tw2330` | `TW2330` | 上市个股（台积电） |
-| `tw6271` | `TW6271` | 上柜个股 |
+| `tw2330` | `TW2330` | 上市個股（台積電） |
+| `tw6271` | `TW6271` | 上櫃個股 |
 | `tw0050` / `tw00878` | `TW0050` / `TW00878` | ETF |
-| `2330.TW` | `TW2330` | 后缀写法（上市） |
-| `6271.TWO` | `TW6271` | 后缀写法（上柜） |
+| `2330.TW` | `TW2330` | 後綴寫法（上市） |
+| `6271.TWO` | `TW6271` | 後綴寫法（上櫃） |
 
-纯数字（如 `2330`、`600519`）不会被识别为台股，避免与 A 股 / 港股冲突。
+純數位（如 `2330`、`600519`）不會被識別為台股，避免與 A 股 / 港股衝突。
 
-自选股示例：
+自選股範例：
 
 ```bash
 STOCK_LIST=tw2330,tw2454,tw0050
@@ -30,107 +30,107 @@ STOCK_LIST=tw2330,tw2454,tw0050
 
 ---
 
-## 2. 申请 Shioaji API
+## 2. 申請 Shioaji API
 
-1. 于**永丰金证券**开立证券户（线上或临柜）。
-2. 登入永丰金证券网站，进入 API 服务，**线上签署 API 使用同意书**。
+1. 於**永豐金證券**開立證券戶（線上或臨櫃）。
+2. 登入永豐金證券網站，進入 API 服務，**線上簽署 API 使用同意書**。
 3. 建立 **API Key / Secret Key**。
-4. （可选）下载 **CA 凭证**（`Sinopac.pfx`）。查询行情**不需要** CA 凭证，仅下单需要。
+4. （可選）下載 **CA 憑證**（`Sinopac.pfx`）。查詢行情**不需要** CA 憑證，僅下單需要。
 
-官方文档：
-- Shioaji 文档：https://sinotrade.github.io/
-- 使用限制：https://sinotrade.github.io/tutor/limit/ （同一 person_id 最多 5 条连线、行情查询 50 次 / 5 秒等）
+官方文件：
+- Shioaji 文件：https://sinotrade.github.io/
+- 使用限制：https://sinotrade.github.io/tutor/limit/ （同一 person_id 最多 5 條連線、行情查詢 50 次 / 5 秒等）
 
 ---
 
-## 3. 环境变量配置
+## 3. 環境變數配置
 
-在 `.env` 中配置（仅在同时设置 API Key 与 Secret Key 时才会启用台股数据源）：
+在 `.env` 中配置（僅在同時設置 API Key 與 Secret Key 時才會啟用台股數據源）：
 
 ```bash
-SHIOAJI_API_KEY=          # 永丰金 API Key
-SHIOAJI_SECRET_KEY=       # 永丰金 Secret Key
-SHIOAJI_PERSON_ID=        # 身份证字号（仅 CA 凭证启用时需要）
-SHIOAJI_CA_PATH=          # CA 凭证路径（可选，查询行情不需要）
-SHIOAJI_CA_PASSWORD=      # CA 凭证密码（可选）
-SHIOAJI_SIMULATION=false  # true=模拟环境（测试用）
+SHIOAJI_API_KEY=          # 永豐金 API Key
+SHIOAJI_SECRET_KEY=       # 永豐金 Secret Key
+SHIOAJI_PERSON_ID=        # 身份證字號（僅 CA 憑證啟用時需要）
+SHIOAJI_CA_PATH=          # CA 憑證路徑（可選，查詢行情不需要）
+SHIOAJI_CA_PASSWORD=      # CA 憑證密碼（可選）
+SHIOAJI_SIMULATION=false  # true=模擬環境（測試用）
 
-# 大盘复盘台股区域（加权 ^TWII / 柜买 ^TWOII）
+# 大盤復盤台股區域（加權 ^TWII / 櫃買 ^TWOII）
 MARKET_REVIEW_REGION=tw
 ```
 
-依赖安装：
+依賴安裝：
 
 ```bash
 pip install shioaji          # 已加入 requirements.txt
 ```
 
-未安装 `shioaji` 或未配置金钥时，系统不会实例化台股数据源；台股代码将报告“无可用数据源”，不影响 A 股 / 港股 / 美股流程。
+未安裝 `shioaji` 或未配置金鑰時，系統不會實例化台股數據源；台股代碼將報告“無可用數據源”，不影響 A 股 / 港股 / 美股流程。
 
 ---
 
-## 4. 支持的功能与对应数据源
+## 4. 支持的功能與對應數據源
 
-| 功能 | 台股对应 | 数据来源 |
+| 功能 | 台股對應 | 數據來源 |
 | --- | --- | --- |
-| 日线 K 线 | `api.kbars()`（1 分钟 K 重采样为日线 OHLCV） | Shioaji |
-| 即时报价 | `api.snapshots()` | Shioaji |
-| 个股名称 / 交易所归属 | contract 属性 | Shioaji |
-| 主力资金流（→ 三大法人买卖超） | 外资 / 投信 / 自营商 买卖超 | TWSE T86（上市）/ TPEx OpenAPI（上柜） |
-| 融资融券 | 融资融券余额 | TWSE MI_MARGN（上市）/ TPEx OpenAPI（上柜） |
-| 大盘指数 | 加权指数 ^TWII、柜买指数 ^TWOII | yfinance |
+| 日線 K 線 | `api.kbars()`（1 分鐘 K 重採樣為日線 OHLCV） | Shioaji |
+| 即時報價 | `api.snapshots()` | Shioaji |
+| 個股名稱 / 交易所歸屬 | contract 屬性 | Shioaji |
+| 主力資金流（→ 三大法人買賣超） | 外資 / 投信 / 自營商 買賣超 | TWSE T86（上市）/ TPEx OpenAPI（上櫃） |
+| 融資融券 | 融資融券餘額 | TWSE MI_MARGN（上市）/ TPEx OpenAPI（上櫃） |
+| 大盤指數 | 加權指數 ^TWII、櫃買指數 ^TWOII | yfinance |
 
-### 上市（TSE）vs 上柜（OTC）
+### 上市（TSE）vs 上櫃（OTC）
 
-- 合约解析顺序：先 `api.Contracts.Stocks[code]`（统一查询），找不到再依次试 `TSE` / `OTC`。
-- 三大法人 / 融资融券会依 Shioaji 合约的交易所自动选择 TWSE（上市）或 TPEx（上柜）OpenAPI。
+- 合約解析順序：先 `api.Contracts.Stocks[code]`（統一查詢），找不到再依次試 `TSE` / `OTC`。
+- 三大法人 / 融資融券會依 Shioaji 合約的交易所自動選擇 TWSE（上市）或 TPEx（上櫃）OpenAPI。
 
-### 台股财经新闻（TaiwanRSS，免 API Key）
+### 台股財經新聞（TaiwanRSS，免 API Key）
 
-台股个股 / 大盘复盘的新闻情报由内置 RSS 新闻源 `TaiwanRSS` 提供，**免费、免 API Key、默认启用**：
+台股個股 / 大盤復盤的新聞情報由內建 RSS 新聞源 `TaiwanRSS` 提供，**免費、免 API Key、預設啟用**：
 
-- 默认聚合三个繁中财经 **大盘/头条** RSS 源（Yahoo 股市新闻、中央社财经、鉅亨网头条）。
-- 查询含 4 位台股代码时，额外拉取四套**个股向**来源（均已在 TTL 内缓存，单一源失败跳过）：
-  - **Yahoo 个股 RSS**：`https://tw.stock.yahoo.com/rss?s=代码`
+- 默認聚合三個繁中財經 **大盤/頭條** RSS 源（Yahoo 股市新聞、中央社財經、鉅亨網頭條）。
+- 查詢含 4 位台股代碼時，額外拉取四套**個股向**來源（均已在 TTL 內快取，單一源失敗跳過）：
+  - **Yahoo 個股 RSS**：`https://tw.stock.yahoo.com/rss?s=代碼`
   - **Google News RSS**：`https://news.google.com/rss/search?q=...&hl=zh-TW&gl=TW`
-  - **FinMind TaiwanStockNews**：`dataset=TaiwanStockNews`（免 Token 可用，配置 `FINMIND_TOKEN` 可提升配额）
-- 按查询中的**个股名称**与 **4 位台股代码**过滤宏观 RSS；**个股向来源不再做二次 token 过滤**。**纯英文查询（美股/港股）会自动跳过**，不污染其他市场结果。
-- 多 feed 抓取结果在 TTL 内共享缓存（默认 5 分钟），整轮自选股分析复用同一批解析结果；**单一 feed 失败会被跳过**，不影响主分析流程。
-- 与其他搜索源（Tavily / Brave / Bocha / SerpAPI / SearXNG 等）共用统一的新闻时效窗口、关联度排序与 fallback 逻辑；当配置了有 key 的源时，`TaiwanRSS` 作为免费兜底参与排序。
-- 相关配置：
+  - **FinMind TaiwanStockNews**：`dataset=TaiwanStockNews`（免 Token 可用，配置 `FINMIND_TOKEN` 可提升配額）
+- 按查詢中的**個股名稱**與 **4 位台股代碼**過濾宏觀 RSS；**個股向來源不再做二次 token 過濾**。**純英文查詢（美股/港股）會自動跳過**，不汙染其他市場結果。
+- 多 feed 抓取結果在 TTL 內共享快取（默認 5 分鐘），整輪自選股分析復用同一批解析結果；**單一 feed 失敗會被跳過**，不影響主分析流程。
+- 與其他搜索源（Tavily / Brave / Bocha / SerpAPI / SearXNG 等）共用統一的新聞時效窗口、關聯度排序與 fallback 邏輯；當配置了有 key 的源時，`TaiwanRSS` 作為免費兜底參與排序。
+- 相關配置：
 
-| 变量 | 默认 | 说明 |
+| 變數 | 默認 | 說明 |
 | --- | --- | --- |
-| `TW_RSS_NEWS_ENABLED` | `true` | 是否启用台股 RSS 新闻源；设为 `false` 关闭 |
-| `TW_RSS_FEED_URLS` | 空（用内置默认源） | 逗号分隔的自定义 RSS feed 列表，覆盖默认宏观源 |
-| `TW_RSS_GOOGLE_NEWS_ENABLED` | `true` | 是否启用 Google News RSS 个股检索 |
-| `TW_RSS_FINMIND_NEWS_ENABLED` | `true` | 是否启用 FinMind `TaiwanStockNews` |
-| `FINMIND_TOKEN` | 空 | FinMind API Token（可选；新闻与筹码分布共用） |
+| `TW_RSS_NEWS_ENABLED` | `true` | 是否啟用台股 RSS 新聞源；設為 `false` 關閉 |
+| `TW_RSS_FEED_URLS` | 空（用內建默認源） | 逗號分隔的自訂 RSS feed 列表，覆蓋默認宏觀源 |
+| `TW_RSS_GOOGLE_NEWS_ENABLED` | `true` | 是否啟用 Google News RSS 個股檢索 |
+| `TW_RSS_FINMIND_NEWS_ENABLED` | `true` | 是否啟用 FinMind `TaiwanStockNews` |
+| `FINMIND_TOKEN` | 空 | FinMind API Token（可選；新聞與籌碼分布共用） |
 
-### 首页个股搜索下拉中的台股
+### 首頁個股搜索下拉中的台股
 
-- 下拉候选来自静态索引 `stocks.index.json`，与 `MARKET_TW_ENABLED` 无关（后者只控制抓取/分析/大盘复盘）。
-- 默认可用 `python scripts/generate_index_from_csv.py --merge-tw-listed` 从 TWSE Open API 拉取**所有上市证券**（约 1300+ 档，含 ETF）并写入索引；亦可用 `--merge-tw` 仅合并 `data/stock_list_tw.csv` 精选清单。条目带 `tw` 前缀（如 `tw2330`、`tw2344`），输入纯数字（如 `2344`）也可命中。
-- 扩充清单：编辑 `data/stock_list_tw.csv` 后执行 `python scripts/generate_index_from_csv.py --merge-tw`，会保留其他市场条目、幂等替换台股条目，并同步 `apps/dsa-web/public` / `static` / `data/cache` 三处索引。
-- 即使某代码不在下拉清单中，仍可直接输入 `tw<代码>` 并回车触发分析（后端识别 `tw` 前缀 / `.TW` 后缀经 Shioaji 取数）。
-- 本地若不希望 48 小时远端刷新用上游（无台股）索引覆盖本地缓存，可设 `STOCK_INDEX_REMOTE_UPDATE_ENABLED=false`。
-
----
-
-## 5. 已知限制 / 台股暂不支持
-
-以下能力在台股**暂不支持**，调用时优雅降级（返回 `None` / 空），不会抛异常中断整体流程：
-
-- **筹码分布**（A 股 `ChipDistribution`）：台股经 TDCC 股權分散表（Open Data）映射大户集中度，并结合 FinMind（可选 `FINMIND_TOKEN`）或 yfinance 估算 VWAP 作为平均成本；Akshare `stock_cyq_em` 不会用于台股代码。
-- **板块 / 概念涨跌榜、市场涨跌家数（breadth）**：台股大盘复盘的 `has_market_stats` / `has_sector_rankings` 为 `False`，仅做指数级复盘。
-- **三大法人 / 融资融券尚未接入个股 LLM 分析层**：数据方法（`ShioajiTwFetcher.get_institutional_investors` / `get_margin_balance`）已可用并有单测覆盖，但暂未注入个股分析报告（保持与现有分析层契约一致，避免越界改动）。
-- **兴柜股票、期货 / 选择权**：不支持。
-- 历史资料可查询区间受 Shioaji 限制（个股自 2020-03-02 起）。
+- 下拉候選來自靜態索引 `stocks.index.json`，與 `MARKET_TW_ENABLED` 無關（後者只控制抓取/分析/大盤復盤）。
+- 默認可用 `python scripts/generate_index_from_csv.py --merge-tw-listed` 從 TWSE Open API 拉取**所有上市證券**（約 1300+ 檔，含 ETF）並寫入索引；亦可用 `--merge-tw` 僅合併 `data/stock_list_tw.csv` 精選清單。條目帶 `tw` 前綴（如 `tw2330`、`tw2344`），輸入純數位（如 `2344`）也可命中。
+- 擴充清單：編輯 `data/stock_list_tw.csv` 後執行 `python scripts/generate_index_from_csv.py --merge-tw`，會保留其他市場條目、冪等替換台股條目，並同步 `apps/dsa-web/public` / `static` / `data/cache` 三處索引。
+- 即使某代碼不在下拉清單中，仍可直接輸入 `tw<代碼>` 並回車觸發分析（後端識別 `tw` 前綴 / `.TW` 後綴經 Shioaji 取數）。
+- 本地若不希望 48 小時遠端刷新用上游（無台股）索引覆蓋本地快取，可設 `STOCK_INDEX_REMOTE_UPDATE_ENABLED=false`。
 
 ---
 
-## 6. 行为说明
+## 5. 已知限制 / 台股暫不支持
 
-- 数据质量：TWSE/TPEx 三大法人与融资融券为盘后日资料（约 15:00 后更新）；盘中查询返回上一交易日。
-- 稳定性：单一来源（Shioaji 连线、某个 OpenAPI endpoint）失败不应拖垮分析主流程；行情类失败返回 `None`，日线失败由上层 failover 处理。
-- 大盘复盘 `both` 仍仅含 cn+hk+us（历史别名）；台股需以 `MARKET_REVIEW_REGION=tw` 显式选取，或使用逗号组合如 `cn,tw`。
+以下能力在台股**暫不支持**，調用時優雅降級（返回 `None` / 空），不會拋異常中斷整體流程：
+
+- **籌碼分布**（A 股 `ChipDistribution`）：台股經 TDCC 股權分散表（Open Data）映射大戶集中度，並結合 FinMind（可選 `FINMIND_TOKEN`）或 yfinance 估算 VWAP 作為平均成本；Akshare `stock_cyq_em` 不會用於台股代碼。
+- **板塊 / 概念漲跌榜、市場漲跌家數（breadth）**：台股大盤復盤的 `has_market_stats` / `has_sector_rankings` 為 `False`，僅做指數級復盤。
+- **三大法人 / 融資融券尚未接入個股 LLM 分析層**：數據方法（`ShioajiTwFetcher.get_institutional_investors` / `get_margin_balance`）已可用並有單測覆蓋，但暫未注入個股分析報告（保持與現有分析層契約一致，避免越界改動）。
+- **興櫃股票、期貨 / 選擇權**：不支持。
+- 歷史資料可查詢區間受 Shioaji 限制（個股自 2020-03-02 起）。
+
+---
+
+## 6. 行為說明
+
+- 數據質量：TWSE/TPEx 三大法人與融資融券為盤後日資料（約 15:00 後更新）；盤中查詢返回上一交易日。
+- 穩定性：單一來源（Shioaji 連線、某個 OpenAPI endpoint）失敗不應拖垮分析主流程；行情類失敗返回 `None`，日線失敗由上層 failover 處理。
+- 大盤復盤 `both` 仍僅含 cn+hk+us（歷史別名）；台股需以 `MARKET_REVIEW_REGION=tw` 顯式選取，或使用逗號組合如 `cn,tw`。
