@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [改进] `REPORT_LANGUAGE` 配置项（含 Settings 下拉）支持 `zh-Hant`，`normalize_report_language` 将 zh-tw/zh-hant/tw 等别名归一化为 zh-Hant，并与 zh(简体)/en 区分。
 - [新功能] 新增台股支持：经永丰金 Shioaji 取得台股日线 K 线、即时快照与个股名称（代码需带 `tw` 前缀，如 `tw2330`、`tw0050`、`tw00878`），仅在配置 `SHIOAJI_API_KEY`/`SHIOAJI_SECRET_KEY` 时启用。
 - [新功能] 台股三大法人买卖超与融资融券余额经 TWSE/TPEx OpenAPI 取得（无需金钥）；单一来源失败优雅降级返回空，不中断主流程。
+- [新功能] 新增台股财经 RSS 新闻源 `TaiwanRSS`（免 API Key），聚合 Yahoo 股市 / 中央社 / 鉅亨网 等繁中财经源，按个股名称 / 4 位台股代码过滤；非台股（纯英文）查询自动跳过、单一 feed 失败优雅降级不中断主流程；新增 `TW_RSS_NEWS_ENABLED`（默认开）与 `TW_RSS_FEED_URLS`（可自定义 feed）配置及 Settings 开关。
+- [文档] `.env.example` 补充免费新闻源推荐组合（中英文）与台股 RSS 配置说明。
+- [新功能] 首页个股搜索下拉新增台股精选清单（常用 ETF + 权值股，繁中名）：`SUPPORTED_STOCK_INDEX_MARKETS` 增加 `TW`，`stocks.index.json` 经 `python scripts/generate_index_from_csv.py --merge-tw` 注入带 `tw` 前缀的可路由条目（如 `tw2330`/`tw0050`），保留全部其他市场条目；选中即提交可路由代码触发台股分析，输入纯数字（如 `2330`）也可命中。
+- [文档] 台股说明补充：本地若要避免 48 小时远端刷新用上游（无台股）覆盖本地索引，可设 `STOCK_INDEX_REMOTE_UPDATE_ENABLED=false`。
+- [新功能] 前端 `Market` 类型与个股搜索下拉新增 `TW`（台股 badge，繁中显示「台股」），修复索引含台股条目时 `MarketBadge` 因未知 market 抛错导致搜索下拉崩溃的问题。
+- [修复] 修复 Web 构建失败：合并 main 引入的回测/持仓页与本分支 zh-Hant UI 语言类型冲突，`featureText.ts` 等 locale 记录缺少 `'zh-Hant'` 导致 `tsc -b` 报错；为受影响 locale 记录补齐繁体 `zh-Hant`（经 OpenCC s2twp 生成，并将股票「代码」过度转换修正为台湾用语「代碼」），恢复 web-gate 可过。
+- [改进] 补齐繁体（zh-Hant）使用者可见文案：设置页帮助文案（`settingsHelp.ts`）与系统配置选项标签（`systemConfigI18n.ts`）新增 zh-Hant 映射并接入语言选择，繁体模式不再回退显示简体；简体(zh)/英文(en) 维持不变。
+- [新功能] 持仓管理支持台股：后端 `VALID_MARKETS` 增加 `tw`、默认计价币种 `tw→TWD`，API `PortfolioAccount/Trade/CorporateAction` 的 `market` 枚举增加 `tw`；前端持仓类型与新建账户下拉新增台股（FX 仍按已有“按币种汇率表”机制，需自行维护 TWD→CNY 汇率，与港股/美股一致）。
+- [新功能] 设置页「大盘复盘市场」下拉新增台股（tw）选项标签（zh/zh-Hant/en），后端早已支持 `MARKET_REVIEW_REGION=tw`，此前仅前端缺少可选项标签。
+- [修复] 个股代码校验支持台股：前端 `validateStockCode` 与后端 `stock_code_utils` / `stocks.py` 校验新增 `TW####`（4-6 位）及 `.TW`/`.TWO` 格式，修复输入 `tw0050` 等台股代码被「请输入有效的股票代码」拦截、无法触发分析的问题；裸 4 位数字仍不视为合法代码以避免与 A 股/港股歧义。
 - [新功能] 大盘复盘新增台股区域：`MARKET_REVIEW_REGION=tw` 复盘加权指数（^TWII）与柜买指数（^TWOII，经 yfinance）；`both` 仍仅含 cn+hk+us。
 - [改进] 交易日历新增台股（exchange-calendars `XTAI`，时区 Asia/Taipei），按市场过滤当日开市股票时纳入台股。
 - [修复] Web 英文界面补齐回测、组合风险与告警规则相关文案本地化，避免英文模式下残留中文筛选器、按钮和枚举标签。
