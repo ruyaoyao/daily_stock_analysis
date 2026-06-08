@@ -1,59 +1,59 @@
 # -*- coding: utf-8 -*-
 """
-TWSE / TPEx 三大法人与融资融券公开 API 适配器（无需 API Key）。
+TWSE / TPEx 三大法人與融資融券公開 API 適配器（無需 API Key）。
 
-数据来源:
+數據來源:
   TSE（上市）三大法人:
     https://www.twse.com.tw/rwd/zh/fund/T86?response=json&date=YYYYMMDD&selectType=ALL
-    stat/date/fields/data 格式。fields 共 19 个字段（含证券代号/名称后的18个数值列）：
-      [0]  证券代号
-      [1]  证券名称
-      [2]  外陆资买进股数(不含外资自营商)
-      [3]  外陆资卖出股数(不含外资自营商)
-      [4]  外陆资买卖超股数(不含外资自营商)   ← foreign_net 基础
-      [5]  外资自营商买进股数
-      [6]  外资自营商卖出股数
-      [7]  外资自营商买卖超股数               ← 外资含自营商净额 = [4]+[7]
-      [8]  投信买进股数
-      [9]  投信卖出股数
-      [10] 投信买卖超股数                     ← trust_net
-      [11] 自营商买卖超股数（总计）            ← dealer_net
-      [12] 自营商买进股数(自行买卖)
-      [13] 自营商卖出股数(自行买卖)
-      [14] 自营商买卖超股数(自行买卖)
-      [15] 自营商买进股数(避险)
-      [16] 自营商卖出股数(避险)
-      [17] 自营商买卖超股数(避险)
-      [18] 三大法人买卖超股数                 ← total_net
+    stat/date/fields/data 格式。fields 共 19 個欄位（含證券代號/名稱後的18個數值列）：
+      [0]  證券代號
+      [1]  證券名稱
+      [2]  外陸資買進股數(不含外資自營商)
+      [3]  外陸資賣出股數(不含外資自營商)
+      [4]  外陸資買賣超股數(不含外資自營商)   ← foreign_net 基礎
+      [5]  外資自營商買進股數
+      [6]  外資自營商賣出股數
+      [7]  外資自營商買賣超股數               ← 外資含自營商淨額 = [4]+[7]
+      [8]  投信買進股數
+      [9]  投信賣出股數
+      [10] 投信買賣超股數                     ← trust_net
+      [11] 自營商買賣超股數（總計）            ← dealer_net
+      [12] 自營商買進股數(自行買賣)
+      [13] 自營商賣出股數(自行買賣)
+      [14] 自營商買賣超股數(自行買賣)
+      [15] 自營商買進股數(避險)
+      [16] 自營商賣出股數(避險)
+      [17] 自營商買賣超股數(避險)
+      [18] 三大法人買賣超股數                 ← total_net
 
-  TSE 融资融券（上市）:
-    https://openapi.twse.com.tw/v1/exchangeReport/MI_MARGN （今日，无 date 参数）
-    返回 list-of-dicts，字段名（与 rwd 相同含义，位置对齐）：
-      股票代號、股票名称、融资买进、融资卖出、融资现金偿还、
-      融资前日余额、融资今日余额、融资限额、
-      融券买进、融券卖出、融券现券偿还、融券前日余额、融券今日余额、融券限额、
-      资券互抵、注记
-    备用（指定日期）: https://www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN
+  TSE 融資融券（上市）:
+    https://openapi.twse.com.tw/v1/exchangeReport/MI_MARGN （今日，無 date 參數）
+    返回 list-of-dicts，欄位名（與 rwd 相同含義，位置對齊）：
+      股票代號、股票名稱、融資買進、融資賣出、融資現金償還、
+      融資前日餘額、融資今日餘額、融資限額、
+      融券買進、融券賣出、融券現券償還、融券前日餘額、融券今日餘額、融券限額、
+      資券互抵、註記
+    備用（指定日期）: https://www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN
       ?response=json&date=YYYYMMDD&selectType=STOCK&stockNo=XXXX
-      返回 tables 数组，tables[1] 包含 fields+data：
-        [0]=代号 [1]=名称
-        融资: [2]=买进 [3]=卖出 [4]=现金偿还 [5]=前日余额 [6]=今日余额 [7]=次一营业日限额
-        融券: [8]=买进 [9]=卖出 [10]=现券偿还 [11]=前日余额 [12]=今日余额 [13]=次一营业日限额
-        [14]=资券互抵 [15]=注记
+      返回 tables 數組，tables[1] 包含 fields+data：
+        [0]=代號 [1]=名稱
+        融資: [2]=買進 [3]=賣出 [4]=現金償還 [5]=前日餘額 [6]=今日餘額 [7]=次一營業日限額
+        融券: [8]=買進 [9]=賣出 [10]=現券償還 [11]=前日餘額 [12]=今日餘額 [13]=次一營業日限額
+        [14]=資券互抵 [15]=註記
 
-  OTC（上柜）三大法人:
+  OTC（上櫃）三大法人:
     https://www.tpex.org.tw/openapi/v1/tpex_mainboard_3big_traders_daily
-    ⚠ 注意：此端点在非台湾地区（或某些环境）可能被 302 重定向至首页，
-    届时本模块将静默返回 None。若未来端点恢复，list-of-dicts 结构待补充。
+    ⚠ 注意：此端點在非台灣地區（或某些環境）可能被 302 重定向至首頁，
+    屆時本模組將靜默返回 None。若未來端點恢復，list-of-dicts 結構待補充。
 
-  OTC（上柜）融资融券:
+  OTC（上櫃）融資融券:
     https://www.tpex.org.tw/openapi/v1/tpex_mainboard_margin_transactions
-    ⚠ 同上，302 重定向时返回 None。
+    ⚠ 同上，302 重定向時返回 None。
 
-所有函数:
-  - 遇到任何异常均返回 None，不向调用方抛出异常。
-  - 日志等级为 WARNING。
-  - HTTP 请求携带 User-Agent: daily-stock-analysis/1.0，超时 10 秒。
+所有函數:
+  - 遇到任何異常均返回 None，不向調用方拋出異常。
+  - 日誌等級為 WARNING。
+  - HTTP 請求攜帶 User-Agent: daily-stock-analysis/1.0，超時 10 秒。
 """
 
 from __future__ import annotations
@@ -72,12 +72,12 @@ _USER_AGENT = "daily-stock-analysis/1.0"
 _TIMEOUT = 10  # seconds
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 内部工具函数
+# 內部工具函數
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 def _get_json(url: str, params: Optional[dict] = None) -> Any:
-    """发起 GET 请求，返回解析后的 JSON 对象；任何失败均返回 None。"""
+    """發起 GET 請求，返回解析後的 JSON 對象；任何失敗均返回 None。"""
     if params:
         from urllib.parse import urlencode
         url = url + ("&" if "?" in url else "?") + urlencode(params)
@@ -85,7 +85,7 @@ def _get_json(url: str, params: Optional[dict] = None) -> Any:
     try:
         with urlopen(req, timeout=_TIMEOUT) as resp:
             raw = resp.read()
-            # 若响应是 HTML（如 TPEx 重定向至首页），直接返回 None
+            # 若響應是 HTML（如 TPEx 重定向至首頁），直接返回 None
             stripped = raw.lstrip()
             if stripped[:1] not in (b"[", b"{"):
                 logger.warning("twse_openapi: non-JSON response from %s (likely redirect)", url)
@@ -99,7 +99,7 @@ def _get_json(url: str, params: Optional[dict] = None) -> Any:
 
 
 def _normalize_stock_code(raw: str) -> str:
-    """将各种格式统一为纯数字或字母代码（去除 TW/TWO 后缀及 TW 前缀）。
+    """將各種格式統一為純數字或字母代碼（去除 TW/TWO 後綴及 TW 前綴）。
 
     例:
       'TW2330'  → '2330'
@@ -109,15 +109,15 @@ def _normalize_stock_code(raw: str) -> str:
       '2330'    → '2330'
     """
     s = raw.strip()
-    # 去除 .TW / .TWO 等证券后缀
+    # 去除 .TW / .TWO 等證券後綴
     s = re.sub(r"\.(TW|TWO|TW0)$", "", s, flags=re.IGNORECASE)
-    # 去除开头的 TW / tw 前缀（仅当后面是数字时）
+    # 去除開頭的 TW / tw 前綴（僅當後面是數字時）
     s = re.sub(r"^tw", "", s, flags=re.IGNORECASE)
     return s.strip()
 
 
 def _safe_int(value: Any) -> Optional[int]:
-    """Best-effort 整数转换（处理逗号分隔的千位格式、空字符串等）。"""
+    """Best-effort 整數轉換（處理逗號分隔的千位格式、空字串等）。"""
     if value is None:
         return None
     s = str(value).strip().replace(",", "").replace(" ", "")
@@ -130,7 +130,7 @@ def _safe_int(value: Any) -> Optional[int]:
 
 
 def _safe_float(value: Any) -> Optional[float]:
-    """Best-effort 浮点转换。"""
+    """Best-effort 浮點轉換。"""
     if value is None:
         return None
     s = str(value).strip().replace(",", "").replace("%", "").replace(" ", "")
@@ -143,7 +143,7 @@ def _safe_float(value: Any) -> Optional[float]:
 
 
 def _recent_trading_days(n: int = 5) -> list[str]:
-    """返回最近 n 个非周末日期（YYYYMMDD 格式），最新在前。"""
+    """返回最近 n 個非週末日期（YYYYMMDD 格式），最新在前。"""
     days: list[str] = []
     d = date.today() - timedelta(days=1)
     while len(days) < n:
@@ -154,7 +154,7 @@ def _recent_trading_days(n: int = 5) -> list[str]:
 
 
 def _format_date_yyyymmdd(raw_date: Optional[str]) -> Optional[str]:
-    """将 TWSE 的 YYYYMMDD 格式日期转为 YYYY-MM-DD；若已是该格式则直接返回。"""
+    """將 TWSE 的 YYYYMMDD 格式日期轉為 YYYY-MM-DD；若已是該格式則直接返回。"""
     if raw_date is None:
         return None
     s = str(raw_date).strip().replace("-", "").replace("/", "")
@@ -170,22 +170,22 @@ def _format_date_yyyymmdd(raw_date: Optional[str]) -> Optional[str]:
 
 def _fetch_tse_institutional(stock_code: str, date_str: Optional[str]) -> Optional[dict]:
     """
-    从 TWSE rwd T86 获取单只上市股票的三大法人数据。
+    從 TWSE rwd T86 獲取單隻上市股票的三大法人數據。
 
-    端点: https://www.twse.com.tw/rwd/zh/fund/T86?response=json&date=YYYYMMDD&selectType=ALL
-    响应结构:
+    端點: https://www.twse.com.tw/rwd/zh/fund/T86?response=json&date=YYYYMMDD&selectType=ALL
+    響應結構:
       stat: 'OK' | '很抱歉...'
       date: 'YYYYMMDD'
-      fields: [19 个字段名称]
-      data: [[...], [...], ...]   # 每行第 0 列为证券代号
+      fields: [19 個欄位名稱]
+      data: [[...], [...], ...]   # 每行第 0 列為證券代號
 
-    字段索引（以下均相对于单行 data[i]）:
-      [0]  证券代号
-      [4]  外陆资买卖超股数(不含外资自营商)  → foreign_net（不含外资自营商）
-      [7]  外资自营商买卖超股数              → 加入以合计「外资含自营商」
-      [10] 投信买卖超股数                    → trust_net
-      [11] 自营商买卖超股数（总计）           → dealer_net
-      [18] 三大法人买卖超股数                → total_net
+    欄位索引（以下均相對於單行 data[i]）:
+      [0]  證券代號
+      [4]  外陸資買賣超股數(不含外資自營商)  → foreign_net（不含外資自營商）
+      [7]  外資自營商買賣超股數              → 加入以合計「外資含自營商」
+      [10] 投信買賣超股數                    → trust_net
+      [11] 自營商買賣超股數（總計）           → dealer_net
+      [18] 三大法人買賣超股數                → total_net
     """
     base_url = "https://www.twse.com.tw/rwd/zh/fund/T86"
 
@@ -207,7 +207,7 @@ def _fetch_tse_institutional(stock_code: str, date_str: Optional[str]) -> Option
             if not row or str(row[0]).strip() != stock_code:
                 continue
 
-            # 索引越界保护
+            # 索引越界保護
             if len(row) < 19:
                 logger.warning(
                     "twse_openapi: T86 row for %s has only %d columns (expected 19)",
@@ -216,13 +216,13 @@ def _fetch_tse_institutional(stock_code: str, date_str: Optional[str]) -> Option
                 )
                 return None
 
-            foreign_excl = _safe_int(row[4])  # 外陆资(不含自营商)
-            foreign_dealer = _safe_int(row[7])  # 外资自营商
+            foreign_excl = _safe_int(row[4])  # 外陸資(不含自營商)
+            foreign_dealer = _safe_int(row[7])  # 外資自營商
             trust_net = _safe_int(row[10])
             dealer_net = _safe_int(row[11])
             total_net = _safe_int(row[18])
 
-            # 外资净额 = 外陆资(不含外资自营商) + 外资自营商
+            # 外資淨額 = 外陸資(不含外資自營商) + 外資自營商
             if foreign_excl is not None and foreign_dealer is not None:
                 foreign_net = foreign_excl + foreign_dealer
             elif foreign_excl is not None:
@@ -251,36 +251,36 @@ def _fetch_tse_institutional(stock_code: str, date_str: Optional[str]) -> Option
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# OTC（上柜）三大法人
+# OTC（上櫃）三大法人
 # ─────────────────────────────────────────────────────────────────────────────
 
-# TPEx OpenAPI 三大法人字段说明（若端点恢复可用时）：
+# TPEx OpenAPI 三大法人欄位說明（若端點恢復可用時）：
 # https://www.tpex.org.tw/openapi/v1/tpex_mainboard_3big_traders_daily
-# 响应: list-of-dicts，字段名待确认（端点当前在非台湾环境被 302 重定向至首页）
-# 预期字段（基于 TPEx 文档）：
+# 響應: list-of-dicts，欄位名待確認（端點當前在非台灣環境被 302 重定向至首頁）
+# 預期欄位（基於 TPEx 文件）：
 #   SecuritiesCompanyCode / CompanyName / ForeignInvestorsNetBuySell /
 #   InvestmentTrustNetBuySell / DealersNetBuySell / Total
-# 注意: 数值单位为「千股」或「张」，与 TSE 的「股」不同。
+# 注意: 數值單位為「千股」或「張」，與 TSE 的「股」不同。
 
 _TPEX_3INSTI_URL = "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_3big_traders_daily"
 
 
 def _fetch_otc_institutional(stock_code: str, _date_str: Optional[str]) -> Optional[dict]:
     """
-    从 TPEx OpenAPI 获取单只上柜股票的三大法人数据。
+    從 TPEx OpenAPI 獲取單隻上櫃股票的三大法人數據。
 
-    ⚠ 当前已知问题：此端点在台湾境外环境下 302 重定向至首页，无法取得数据，
-    届时静默返回 None。
+    ⚠ 當前已知問題：此端點在台灣境外環境下 302 重定向至首頁，無法取得數據，
+    屆時靜默返回 None。
     """
     data = _get_json(_TPEX_3INSTI_URL)
     if not isinstance(data, list) or not data:
         logger.warning(
-            "twse_openapi: OTC 三大法人端点不可用（可能被重定向），stock=%s", stock_code
+            "twse_openapi: OTC 三大法人端點不可用（可能被重定向），stock=%s", stock_code
         )
         return None
 
-    # 尝试常见字段名称（TPEx openapi 历史上曾用过多种命名）
-    # 已知字段候选（按文档/社区资料）：
+    # 嘗試常見欄位名稱（TPEx openapi 歷史上曾用過多種命名）
+    # 已知欄位候選（按文件/社區資料）：
     #   - 'SecuritiesCompanyCode' or 'Code' or 'StockCode'
     #   - 'ForeignInvestorsNetBuySell' or 'ForeignNetBuySell'
     #   - 'InvestmentTrustNetBuySell' or 'TrustNetBuySell'
@@ -289,7 +289,7 @@ def _fetch_otc_institutional(stock_code: str, _date_str: Optional[str]) -> Optio
     first = data[0]
     code_keys = [k for k in first if any(kw in k.lower() for kw in ("code", "no", "股票代", "代號", "securi"))]
     if not code_keys:
-        logger.warning("twse_openapi: 无法识别 TPEx 三大法人 code 字段，keys=%s", list(first.keys()))
+        logger.warning("twse_openapi: 無法識別 TPEx 三大法人 code 欄位，keys=%s", list(first.keys()))
         return None
 
     code_key = code_keys[0]
@@ -297,7 +297,7 @@ def _fetch_otc_institutional(stock_code: str, _date_str: Optional[str]) -> Optio
         if str(row.get(code_key, "")).strip() != stock_code:
             continue
 
-        # 动态匹配各字段
+        # 動態匹配各欄位
         def _pick(keywords: list[str]) -> Optional[int]:
             for k in row:
                 if any(kw.lower() in k.lower() for kw in keywords):
@@ -309,7 +309,7 @@ def _fetch_otc_institutional(stock_code: str, _date_str: Optional[str]) -> Optio
         dealer_net = _pick(["dealer", "自營", "Dealer", "DealerNet"])
         total_net = _pick(["total", "Total", "三大", "合計"])
 
-        # 尝试从响应字段中获取日期
+        # 嘗試從響應欄位中獲取日期
         report_date = None
         for k in row:
             if any(kw.lower() in k.lower() for kw in ("date", "日期", "時間")):
@@ -331,29 +331,29 @@ def _fetch_otc_institutional(stock_code: str, _date_str: Optional[str]) -> Optio
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TSE（上市）融资融券
+# TSE（上市）融資融券
 # ─────────────────────────────────────────────────────────────────────────────
 
-# TWSE openapi.twse.com.tw 融资融券字段（list-of-dicts，今日数据，无日期参数）:
+# TWSE openapi.twse.com.tw 融資融券欄位（list-of-dicts，今日數據，無日期參數）:
 #   '股票代號' '股票名稱' '融資買進' '融資賣出' '融資現金償還'
 #   '融資前日餘額' '融資今日餘額' '融資限額'
 #   '融券買進' '融券賣出' '融券現券償還' '融券前日餘額' '融券今日餘額' '融券限額'
 #   '資券互抵' '註記'
-# 数值单位：张（1 张 = 1000 股）
+# 數值單位：張（1 張 = 1000 股）
 
 _TSE_MARGN_OPENAPI_URL = "https://openapi.twse.com.tw/v1/exchangeReport/MI_MARGN"
 
-# TWSE rwd 融资融券（支持历史日期，tables[1] 位置索引）:
-#   [0]=代号 [1]=名称
-#   融资: [2]=买进 [3]=卖出 [4]=现金偿还 [5]=前日余额 [6]=今日余额 [7]=次一限额
-#   融券: [8]=买进 [9]=卖出 [10]=现券偿还 [11]=前日余额 [12]=今日余额 [13]=次一限额
-#   [14]=资券互抵 [15]=注记
-# 数值单位：张（1 张 = 1000 股）
+# TWSE rwd 融資融券（支持歷史日期，tables[1] 位置索引）:
+#   [0]=代號 [1]=名稱
+#   融資: [2]=買進 [3]=賣出 [4]=現金償還 [5]=前日餘額 [6]=今日餘額 [7]=次一限額
+#   融券: [8]=買進 [9]=賣出 [10]=現券償還 [11]=前日餘額 [12]=今日餘額 [13]=次一限額
+#   [14]=資券互抵 [15]=註記
+# 數值單位：張（1 張 = 1000 股）
 _TSE_MARGN_RWD_URL = "https://www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN"
 
 
 def _parse_tse_margin_from_openapi_row(stock_code: str, row: dict, report_date: Optional[str]) -> dict:
-    """将 openapi MI_MARGN 的单行 dict 解析为标准化输出。"""
+    """將 openapi MI_MARGN 的單行 dict 解析為標準化輸出。"""
     margin_buy = _safe_int(row.get("融資買進"))
     margin_sell = _safe_int(row.get("融資賣出"))
     margin_balance = _safe_int(row.get("融資今日餘額"))
@@ -362,7 +362,7 @@ def _parse_tse_margin_from_openapi_row(stock_code: str, row: dict, report_date: 
     short_balance = _safe_int(row.get("融券今日餘額"))
     margin_limit = _safe_int(row.get("融資限額"))
 
-    # 融资使用率 = 融资余额 / 融资限额 * 100（若可计算）
+    # 融資使用率 = 融資餘額 / 融資限額 * 100（若可計算）
     margin_usage_pct: Optional[float] = None
     if margin_balance is not None and margin_limit and margin_limit > 0:
         margin_usage_pct = round(margin_balance / margin_limit * 100, 4)
@@ -383,13 +383,13 @@ def _parse_tse_margin_from_openapi_row(stock_code: str, row: dict, report_date: 
 
 def _fetch_tse_margin(stock_code: str, date_str: Optional[str]) -> Optional[dict]:
     """
-    从 TWSE 获取上市股票融资融券余额。
+    從 TWSE 獲取上市股票融資融券餘額。
 
-    优先使用 openapi.twse.com.tw（今日数据，无日期参数）；
-    若指定 date 参数则使用 rwd 历史端点。
-    数值单位：张（1 张 = 1000 股）。
+    優先使用 openapi.twse.com.tw（今日數據，無日期參數）；
+    若指定 date 參數則使用 rwd 歷史端點。
+    數值單位：張（1 張 = 1000 股）。
     """
-    # 若指定日期，使用 rwd 历史端点
+    # 若指定日期，使用 rwd 歷史端點
     if date_str:
         data = _get_json(
             _TSE_MARGN_RWD_URL,
@@ -442,7 +442,7 @@ def _fetch_tse_margin(stock_code: str, date_str: Optional[str]) -> Optional[dict
         )
         return None
 
-    # 默认：使用 openapi（今日数据）
+    # 默認：使用 openapi（今日數據）
     data = _get_json(_TSE_MARGN_OPENAPI_URL)
     if not isinstance(data, list):
         logger.warning("twse_openapi: TSE margin openapi returned non-list for %s", stock_code)
@@ -457,35 +457,35 @@ def _fetch_tse_margin(stock_code: str, date_str: Optional[str]) -> Optional[dict
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# OTC（上柜）融资融券
+# OTC（上櫃）融資融券
 # ─────────────────────────────────────────────────────────────────────────────
 
-# TPEx OpenAPI 融资融券字段说明（若端点恢复可用时）：
+# TPEx OpenAPI 融資融券欄位說明（若端點恢復可用時）：
 # https://www.tpex.org.tw/openapi/v1/tpex_mainboard_margin_transactions
-# 响应: list-of-dicts
-# 预期字段（基于 TPEx 官方说明）：
+# 響應: list-of-dicts
+# 預期欄位（基於 TPEx 官方說明）：
 #   SecuritiesCompanyCode / CompanyName
 #   MarginPurchase / MarginSales / MarginCashPayment / MarginYesterdayBalance / MarginBalance / MarginLimit
 #   ShortSale / ShortCovering / StockPayment / ShortYesterdayBalance / ShortBalance / ShortLimit
 #   OffsetLots / Remark
-# 注意：数值单位为「张/千股」，与 TSE 一致。
-# 当前已知：端点在非台湾环境被 302 重定向，届时返回 None。
+# 注意：數值單位為「張/千股」，與 TSE 一致。
+# 當前已知：端點在非台灣環境被 302 重定向，屆時返回 None。
 
 _TPEX_MARGN_URL = "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_margin_transactions"
 
 
 def _fetch_otc_margin(stock_code: str, _date_str: Optional[str]) -> Optional[dict]:
     """
-    从 TPEx OpenAPI 获取上柜股票融资融券余额。
+    從 TPEx OpenAPI 獲取上櫃股票融資融券餘額。
 
-    ⚠ 当前已知问题：此端点在台湾境外环境下 302 重定向至首页，无法取得数据，
-    届时静默返回 None。
-    数值单位：张（1 张 = 1000 股）。
+    ⚠ 當前已知問題：此端點在台灣境外環境下 302 重定向至首頁，無法取得數據，
+    屆時靜默返回 None。
+    數值單位：張（1 張 = 1000 股）。
     """
     data = _get_json(_TPEX_MARGN_URL)
     if not isinstance(data, list) or not data:
         logger.warning(
-            "twse_openapi: OTC 融资融券端点不可用（可能被重定向），stock=%s", stock_code
+            "twse_openapi: OTC 融資融券端點不可用（可能被重定向），stock=%s", stock_code
         )
         return None
 
@@ -495,7 +495,7 @@ def _fetch_otc_margin(stock_code: str, _date_str: Optional[str]) -> Optional[dic
         if any(kw.lower() in k.lower() for kw in ("code", "no", "股票代", "代號", "securi"))
     ]
     if not code_keys:
-        logger.warning("twse_openapi: 无法识别 TPEx 融资融券 code 字段，keys=%s", list(first.keys()))
+        logger.warning("twse_openapi: 無法識別 TPEx 融資融券 code 欄位，keys=%s", list(first.keys()))
         return None
 
     code_key = code_keys[0]
@@ -541,12 +541,12 @@ def _fetch_otc_margin(stock_code: str, _date_str: Optional[str]) -> Optional[dic
             "margin_usage_pct": margin_usage_pct,
         }
 
-    logger.warning("twse_openapi: TPEx 融资融券未找到 stock=%s", stock_code)
+    logger.warning("twse_openapi: TPEx 融資融券未找到 stock=%s", stock_code)
     return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 公开接口
+# 公開介面
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -556,20 +556,20 @@ def get_institutional_investors(
     market: Optional[str] = None,
     date: Optional[str] = None,
 ) -> Optional[dict]:
-    """三大法人买卖超（单一个股）。
+    """三大法人買賣超（單一個股）。
 
-    market: 'TSE'|'OTC'|None（自动先试上市再试上柜）。
+    market: 'TSE'|'OTC'|None（自動先試上市再試上櫃）。
     date: 'YYYYMMDD'|None（最近交易日）。
 
     返回 dict 或 None：
       {
         'stock_code': str, 'market': 'TSE'|'OTC', 'date': 'YYYY-MM-DD',
-        'foreign_net': int,   # 外资及陆资买卖超股数（净，含外资自营商）
-        'trust_net': int,     # 投信买卖超股数（净）
-        'dealer_net': int,    # 自营商买卖超股数（净，含自行买卖+避险）
-        'total_net': int,     # 三大法人买卖超合计股数
+        'foreign_net': int,   # 外資及陸資買賣超股數（淨，含外資自營商）
+        'trust_net': int,     # 投信買賣超股數（淨）
+        'dealer_net': int,    # 自營商買賣超股數（淨，含自行買賣+避險）
+        'total_net': int,     # 三大法人買賣超合計股數
       }
-    数值单位为「股」（TSE）。无法取得任一来源时返回 None，不抛异常。
+    數值單位為「股」（TSE）。無法取得任一來源時返回 None，不拋異常。
     """
     try:
         code = _normalize_stock_code(stock_code)
@@ -583,7 +583,7 @@ def get_institutional_investors(
         if market == "OTC":
             return _fetch_otc_institutional(code, date)
 
-        # 自动顺序：先试 TSE，再试 OTC
+        # 自動順序：先試 TSE，再試 OTC
         result = _fetch_tse_institutional(code, date)
         if result is not None:
             return result
@@ -601,24 +601,24 @@ def get_margin_balance(
     market: Optional[str] = None,
     date: Optional[str] = None,
 ) -> Optional[dict]:
-    """融资融券余额（单一个股）。
+    """融資融券餘額（單一個股）。
 
-    market: 'TSE'|'OTC'|None（自动先试上市再试上柜）。
+    market: 'TSE'|'OTC'|None（自動先試上市再試上櫃）。
     date: 'YYYYMMDD'|None（最近交易日）。
 
     返回 dict 或 None：
       {
         'stock_code': str, 'market': 'TSE'|'OTC', 'date': 'YYYY-MM-DD',
-        'margin_buy': int,        # 融资买进（张）
-        'margin_sell': int,       # 融资卖出（张）
-        'margin_balance': int,    # 融资今日余额（张）
-        'short_sell': int,        # 融券卖出（张）
-        'short_cover': int,       # 融券买进（回补）（张）
-        'short_balance': int,     # 融券今日余额（张）
-        'margin_usage_pct': Optional[float],  # 融资使用率(%)，无则 None
+        'margin_buy': int,        # 融資買進（張）
+        'margin_sell': int,       # 融資賣出（張）
+        'margin_balance': int,    # 融資今日餘額（張）
+        'short_sell': int,        # 融券賣出（張）
+        'short_cover': int,       # 融券買進（回補）（張）
+        'short_balance': int,     # 融券今日餘額（張）
+        'margin_usage_pct': Optional[float],  # 融資使用率(%)，無則 None
       }
-    数值单位：张（TSE openapi）或张（TPEx openapi），1 张 ≈ 1000 股。
-    无法取得返回 None，不抛异常。
+    數值單位：張（TSE openapi）或張（TPEx openapi），1 張 ≈ 1000 股。
+    無法取得返回 None，不拋異常。
     """
     try:
         code = _normalize_stock_code(stock_code)
@@ -632,7 +632,7 @@ def get_margin_balance(
         if market == "OTC":
             return _fetch_otc_margin(code, date)
 
-        # 自动顺序：先试 TSE，再试 OTC
+        # 自動順序：先試 TSE，再試 OTC
         result = _fetch_tse_margin(code, date)
         if result is not None:
             return result
@@ -642,3 +642,109 @@ def get_margin_balance(
             "twse_openapi: get_margin_balance unexpected error for %s: %s", stock_code, exc
         )
         return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 大盤統計：漲跌家數 / 成交額 / 類股漲跌幅（TWSE 上市，無需 API Key）
+# ─────────────────────────────────────────────────────────────────────────────
+
+_TWSE_FMTQIK_URL = "https://openapi.twse.com.tw/v1/exchangeReport/FMTQIK"
+_TWSE_MI_INDEX_URL = "https://openapi.twse.com.tw/v1/exchangeReport/MI_INDEX"
+_TWSE_STOCK_DAY_ALL_URL = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
+
+
+def get_tw_market_stats() -> Optional[dict]:
+    """TWSE（上市）大盤統計：漲跌家數 + 估算漲跌停家數 + 成交額(億元) + 加權指數。
+
+    來源（均無需 Key）：
+      - STOCK_DAY_ALL：逐檔個股，依 Change 正負統計漲/跌/平；以漲跌幅≈±10% 估算漲跌停。
+      - FMTQIK：每日市場成交資訊，TradeValue=成交金額(元)、TAIEX=加權指數、Change=指數漲跌點。
+    任意來源失敗均優雅降級（預設對應欄位）；全部失敗返回 None。
+    """
+    stats: dict = {}
+
+    rows = _get_json(_TWSE_STOCK_DAY_ALL_URL)
+    if isinstance(rows, list) and rows:
+        up = down = flat = limit_up = limit_down = 0
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            change = _safe_float(row.get("Change"))
+            if change is None:
+                continue
+            if change > 0:
+                up += 1
+            elif change < 0:
+                down += 1
+            else:
+                flat += 1
+            close = _safe_float(row.get("ClosingPrice"))
+            if close is not None:
+                prev = close - change
+                if prev > 0:
+                    pct = change / prev * 100
+                    if pct >= 9.8:
+                        limit_up += 1
+                    elif pct <= -9.8:
+                        limit_down += 1
+        stats.update(
+            {
+                "up_count": up,
+                "down_count": down,
+                "flat_count": flat,
+                "limit_up_count": limit_up,
+                "limit_down_count": limit_down,
+            }
+        )
+
+    fmt = _get_json(_TWSE_FMTQIK_URL)
+    if isinstance(fmt, list) and fmt:
+        last = fmt[-1] if isinstance(fmt[-1], dict) else {}
+        trade_value = _safe_float(last.get("TradeValue"))
+        if trade_value is not None:
+            stats["total_amount"] = round(trade_value / 1e8, 2)  # 元 → 億元
+        taiex = _safe_float(last.get("TAIEX"))
+        if taiex is not None:
+            stats["index_close"] = taiex
+        idx_change = _safe_float(last.get("Change"))
+        if idx_change is not None:
+            stats["index_change"] = idx_change
+
+    return stats or None
+
+
+def get_tw_sector_rankings(n: int = 5) -> Optional[tuple]:
+    """TWSE（上市）類股漲跌榜：自 MI_INDEX 取各『類指數』漲跌幅，排序取領漲/領跌各 n。
+
+    返回 (top_sectors, bottom_sectors)，元素為 {'name','change_pct'}；失敗返回 None。
+    """
+    rows = _get_json(_TWSE_MI_INDEX_URL)
+    if not isinstance(rows, list) or not rows:
+        return None
+
+    sectors: list[dict] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = (row.get("指數") or "").strip()
+        # 僅保留產業類股指數，排除加權/未含/報酬等衍生指數
+        if "類" not in name or any(
+            x in name for x in ("未含", "報酬", "加權", "寶島", "反向", "正向", "槓桿", "兩倍", "單日")
+        ):
+            continue
+        pct = _safe_float(row.get("漲跌百分比"))
+        if pct is None:
+            continue
+        sign = (row.get("漲跌") or "").strip()
+        if sign in ("-", "－", "—") and pct > 0:  # 防禦：百分比若為無符號幅度則按漲跌列定號
+            pct = -pct
+        display = name.replace("類指數", "").replace("類", "") or name
+        sectors.append({"name": display, "change_pct": round(pct, 2)})
+
+    if not sectors:
+        return None
+
+    sectors.sort(key=lambda s: s["change_pct"], reverse=True)
+    top = sectors[:n]
+    bottom = list(reversed(sectors[-n:]))
+    return top, bottom

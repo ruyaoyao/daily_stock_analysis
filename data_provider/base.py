@@ -2207,8 +2207,23 @@ class DataFetcherManager:
                 continue
         return []
 
-    def get_market_stats(self) -> Dict[str, Any]:
-        """获取市场涨跌统计（自动切换数据源）"""
+    def get_market_stats(self, region: Optional[str] = None) -> Dict[str, Any]:
+        """获取市场涨跌统计（自动切换数据源）。
+
+        region='tw' 走 TWSE OpenAPI（无需 Key）的台股大盘统计；其余维持原有
+        A 股/通用数据源链路。
+        """
+        if (region or "").lower() == "tw":
+            try:
+                from data_provider.twse_openapi import get_tw_market_stats
+                data = get_tw_market_stats()
+                if data:
+                    logger.info("[TWSE OpenAPI] 获取台股市场统计成功")
+                    return data
+            except Exception as e:
+                logger.warning("[TWSE OpenAPI] 获取台股市场统计失败: %s", e)
+            return {}
+
         tickflow_fetcher = self._get_tickflow_fetcher()
         if tickflow_fetcher is not None:
             try:
@@ -3230,8 +3245,22 @@ class DataFetcherManager:
 
             return [], [], source_chain, last_error
 
-    def get_sector_rankings(self, n: int = 5) -> Tuple[List[Dict], List[Dict]]:
-        """获取板块涨跌榜（自动切换数据源）"""
+    def get_sector_rankings(self, n: int = 5, region: Optional[str] = None) -> Tuple[List[Dict], List[Dict]]:
+        """获取板块涨跌榜（自动切换数据源）。
+
+        region='tw' 走 TWSE OpenAPI（无需 Key）的类股涨跌榜；其余维持原有链路。
+        """
+        if (region or "").lower() == "tw":
+            try:
+                from data_provider.twse_openapi import get_tw_sector_rankings
+                result = get_tw_sector_rankings(n)
+                if result and (result[0] or result[1]):
+                    logger.info("[TWSE OpenAPI] 获取台股类股涨跌榜成功")
+                    return result[0] or [], result[1] or []
+            except Exception as e:
+                logger.warning("[TWSE OpenAPI] 获取台股类股涨跌榜失败: %s", e)
+            return [], []
+
         # 按需求固定回退顺序：Akshare(EM) -> Akshare(Sina) -> Tushare -> Efinance
         top, bottom, _, last_error = self._get_sector_rankings_with_meta(n)
         if top or bottom:

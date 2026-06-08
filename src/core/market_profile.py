@@ -71,14 +71,14 @@ TW_PROFILE = MarketProfile(
     region="tw",
     mood_index_code="TWII",
     news_queries=[
-        "台股 大盤 復盤",
+        "台股 大盤 覆盤",
         "Taiwan stock market",
         "加權指數 行情",
     ],
     prompt_index_hint="分析加權指數（TAIEX）、櫃買指數等台股各指數走勢特點",
-    # 台股的涨跌家数 / 板块榜暂无对应免密钥数据源，保持 False（仅做指数级复盘）
-    has_market_stats=False,
-    has_sector_rankings=False,
+    # 台股涨跌家数/成交额/类股涨跌幅经 TWSE OpenAPI（无需密钥）取得（上市 TWSE 口径）
+    has_market_stats=True,
+    has_sector_rankings=True,
 )
 
 
