@@ -209,8 +209,8 @@ class MarketReviewLocalizationTestCase(unittest.TestCase):
                 notifier, send_notification=False, override_region="cn,us"
             )
 
-        self.assertIn("# A股大盤覆盤\n\nCN body", result)
-        self.assertIn("# 美股大盤覆盤\n\nUS body", result)
+        self.assertIn("# A股大盘复盘\n\nCN body", result)
+        self.assertIn("# 美股大盘复盘\n\nUS body", result)
         self.assertNotIn("港股", result)
         self.assertNotIn("HK", result)
 
@@ -242,8 +242,8 @@ class MarketReviewLocalizationTestCase(unittest.TestCase):
                 notifier, send_notification=False, override_region="cn,hk"
             )
 
-        self.assertIn("# A股大盤覆盤\n\nCN body", result)
-        self.assertIn("# 港股大盤覆盤\n\nHK body", result)
+        self.assertIn("# A股大盘复盘\n\nCN body", result)
+        self.assertIn("# 港股大盘复盘\n\nHK body", result)
         self.assertNotIn("美股", result)
         self.assertNotIn("US Market", result)
 
@@ -407,7 +407,7 @@ class MarketReviewLocalizationTestCase(unittest.TestCase):
                     ).first()
                     self.assertIsNotNone(row)
                     self.assertEqual(row.code, market_review_module.MARKET_REVIEW_HISTORY_CODE)
-                    self.assertEqual(row.name, "大盤覆盤")
+                    self.assertEqual(row.name, "大盘复盘")
                     self.assertEqual(row.report_type, market_review_module.MARKET_REVIEW_REPORT_TYPE)
                     self.assertEqual(row.news_content, "## 今日大盤\n\n覆盤正文")
                     self.assertIn("# 🎯 大盤覆盤", row.raw_result)
