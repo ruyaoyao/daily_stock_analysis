@@ -532,6 +532,51 @@ def _uses_direct_env_provider(model: str) -> bool:
     return bool(provider) and provider not in _MANAGED_LITELLM_KEY_PROVIDERS
 
 
+
+
+def split_comma_separated_litellm_models(
+    primary: str,
+    fallbacks: Optional[List[str]] = None,
+) -> Tuple[str, List[str]]:
+    """Split accidental comma-separated LITELLM_MODEL values into primary + fallbacks."""
+    raw = (primary or "").strip()
+    extra = list(fallbacks or [])
+    if not raw or "," not in raw:
+        return raw, extra
+    parts = [part.strip() for part in raw.split(",") if part.strip()]
+    if len(parts) <= 1:
+        return raw, extra
+    logger.warning(
+        "LITELLM_MODEL contains comma-separated values; using %s as primary and merging the rest into fallbacks",
+        parts[0],
+    )
+    merged = parts[1:] + extra
+    seen = {parts[0]}
+    deduped: List[str] = []
+    for model in merged:
+        if model in seen:
+            continue
+        seen.add(model)
+        deduped.append(model)
+    return parts[0], deduped
+
+
+def _first_csv_model_name(raw: str) -> str:
+    """Return the first model name from a comma-separated env value."""
+    value = (raw or "").strip()
+    if not value:
+        return value
+    if "," not in value:
+        return value
+    parts = [part.strip() for part in value.split(",") if part.strip()]
+    if len(parts) > 1:
+        logger.warning(
+            "Comma-separated model env value detected; using first entry %s",
+            parts[0],
+        )
+    return parts[0] if parts else value
+
+
 def normalize_agent_litellm_model(
     model: str,
     configured_models: Optional[set[str]] = None,
@@ -1237,7 +1282,7 @@ class Config:
         else:
             _openai_model_name = _openai_model_env or 'gpt-5.5'
         if not litellm_model:
-            _gemini_model_name = os.getenv('GEMINI_MODEL', 'gemini-3.1-pro-preview').strip()
+            _gemini_model_name = _first_csv_model_name(os.getenv('GEMINI_MODEL', 'gemini-3.1-pro-preview'))
             _anthropic_model_name = os.getenv('ANTHROPIC_MODEL', 'claude-sonnet-4-6').strip()
             if gemini_api_keys:
                 litellm_model = f'gemini/{_gemini_model_name}'
@@ -1265,6 +1310,11 @@ class Config:
                 litellm_fallback_models = [_fb]
             else:
                 litellm_fallback_models = []
+
+        litellm_model, litellm_fallback_models = split_comma_separated_litellm_models(
+            litellm_model,
+            litellm_fallback_models,
+        )
 
         # === LLM Channels + YAML config ===
         litellm_config_path = os.getenv('LITELLM_CONFIG', '').strip() or None

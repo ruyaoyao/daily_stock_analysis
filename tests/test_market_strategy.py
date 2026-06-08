@@ -72,5 +72,29 @@ class TestMarketAnalyzerStrategyPrompt(unittest.TestCase):
         self.assertNotIn("A股市场三段式复盘策略", prompt)
 
 
+
+class TestTaiwanMarketReviewNewsFilter(unittest.TestCase):
+    """Validate TW market review scope and news filtering."""
+
+    def test_tw_prompt_uses_taiwan_market_scope(self):
+        with patch("src.market_analyzer.get_config", return_value=SimpleNamespace(report_language="zh-Hant")):
+            analyzer = MarketAnalyzer(region="tw")
+        self.assertEqual(analyzer._get_market_scope_name(), "台股市場")
+        prompt = analyzer._build_review_prompt(MarketOverview(date="2026-06-08"), [])
+        self.assertIn("台股市場", prompt)
+        self.assertNotIn("A股市場", prompt.split("台股市場")[0])
+
+    def test_filter_market_review_news_drops_crypto_noise(self):
+        noise = {"title": "Binance 的見解：覆盤", "snippet": "crypto market", "url": "https://binance.com/x"}
+        relevant = {"title": "台股加權指數收黑", "snippet": "集中市場", "url": "https://news.example/tw"}
+        filtered = MarketAnalyzer._filter_market_review_news([noise, relevant], "tw")
+        self.assertEqual(len(filtered), 1)
+        self.assertEqual(filtered[0]["title"], relevant["title"])
+
+    def test_filter_market_review_news_keeps_non_tw_region(self):
+        item = {"title": "Binance recap", "snippet": "", "url": "https://binance.com/x"}
+        filtered = MarketAnalyzer._filter_market_review_news([item], "us")
+        self.assertEqual(filtered, [item])
+
 if __name__ == "__main__":
     unittest.main()

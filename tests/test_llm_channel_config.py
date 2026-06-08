@@ -791,5 +791,29 @@ class GeminiKeyParsingTestCase(unittest.TestCase):
         self.assertEqual(config.gemini_api_keys, ["p1", "p2"])
 
 
+    @patch("src.config.setup_env")
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_comma_separated_litellm_model_splits_into_primary_and_fallbacks(self, _yaml, _env) -> None:
+        env = {
+            "LITELLM_MODEL": "gemini/gemini-2.5-flash,gemini/gemini-3.5-flash",
+            "GEMINI_API_KEYS": "test-key",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            config = Config._load_from_env()
+        self.assertEqual(config.litellm_model, "gemini/gemini-2.5-flash")
+        self.assertIn("gemini/gemini-3.5-flash", config.litellm_fallback_models)
+
+    @patch("src.config.setup_env")
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_comma_separated_gemini_model_uses_first_entry(self, _yaml, _env) -> None:
+        env = {
+            "GEMINI_MODEL": "gemini-3.5-flash,gemini-2.5-flash",
+            "GEMINI_API_KEYS": "test-key",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            config = Config._load_from_env()
+        self.assertEqual(config.litellm_model, "gemini/gemini-3.5-flash")
+
+
 if __name__ == "__main__":
     unittest.main()

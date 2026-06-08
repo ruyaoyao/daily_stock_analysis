@@ -44,6 +44,36 @@ _CHINESE_SECTION_PATTERNS = {
     "news_catalysts": r"###\s*五、(?:消息催化|後市展望)",
 }
 
+_MARKET_NEWS_NOISE_MARKERS = (
+    "binance",
+    "moomoo",
+    "bitcoin",
+    "crypto",
+    "cryptocurrency",
+    "以太坊",
+    "比特幣",
+)
+_TW_MARKET_NEWS_MARKERS = (
+    "台股",
+    "臺股",
+    "加權",
+    "櫃買",
+    "指數",
+    "大盤",
+    "台灣",
+    "臺灣",
+    "taiex",
+    "twii",
+    "台指",
+    "法人",
+    "集中市場",
+    "櫃買指數",
+    "加權指數",
+    "台指期",
+    "現貨",
+)
+
+
 
 @dataclass
 class MarketIndex:
@@ -157,6 +187,8 @@ class MarketAnalyzer:
             return "US market" if review_language == "en" else "美股市場"
         if self.region == "hk":
             return "Hong Kong market" if review_language == "en" else "港股市場"
+        if self.region == "tw":
+            return "Taiwan market" if review_language == "en" else "台股市場"
         if review_language == "en":
             return "A-share market"
         return "A股市場"
@@ -445,6 +477,55 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
     #     except Exception as e:
     #         logger.warning(f"[大盤] 獲取北向資金失敗: {e}")
 
+
+    @staticmethod
+    def _market_news_text(item) -> str:
+        if hasattr(item, "title"):
+            title = getattr(item, "title", "") or ""
+            snippet = getattr(item, "snippet", "") or ""
+            url = getattr(item, "url", "") or ""
+        elif isinstance(item, dict):
+            title = item.get("title") or ""
+            snippet = item.get("snippet") or ""
+            url = item.get("url") or ""
+        else:
+            title = snippet = url = ""
+        return f"{title} {snippet} {url}".strip()
+
+    @classmethod
+    def _is_relevant_market_news(cls, item, region: str) -> bool:
+        text = cls._market_news_text(item)
+        if not text:
+            return False
+        if region != "tw":
+            return True
+        lowered = text.lower()
+        has_tw_marker = any(
+            marker.lower() in lowered if marker.isascii() else marker in text
+            for marker in _TW_MARKET_NEWS_MARKERS
+        )
+        has_noise = any(
+            marker in lowered for marker in _MARKET_NEWS_NOISE_MARKERS if marker.isascii()
+        ) or "的見解" in text
+        if has_noise and not has_tw_marker:
+            return False
+        return has_tw_marker
+
+    @classmethod
+    def _filter_market_review_news(cls, items: List, region: str) -> List:
+        filtered: List = []
+        seen_urls = set()
+        for item in items or []:
+            url = cls._get_news_field(item, "url")
+            if not cls._is_relevant_market_news(item, region):
+                continue
+            if url and url in seen_urls:
+                continue
+            if url:
+                seen_urls.add(url)
+            filtered.append(item)
+        return filtered
+
     def search_market_news(self) -> List[Dict]:
         """
         搜索市場新聞
@@ -461,11 +542,12 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         # 按 region 使用不同的新聞搜索詞
         search_queries = self.profile.news_queries
         review_language = self._get_review_language()
+        use_zh_labels = review_language != "en"
         market_names = {
-            "cn": "大盤" if review_language == "zh" else "A-share market",
-            "us": "美股市場" if review_language == "zh" else "US market",
-            "hk": "港股市場" if review_language == "zh" else "HK market",
-            "tw": "台股市場" if review_language == "zh" else "Taiwan market",
+            "cn": "大盤" if use_zh_labels else "A-share market",
+            "us": "美股市場" if use_zh_labels else "US market",
+            "hk": "港股市場" if use_zh_labels else "HK market",
+            "tw": "台股市場" if use_zh_labels else "Taiwan market",
         }
 
         try:
@@ -484,6 +566,14 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                     all_news.extend(response.results)
                     logger.info(f"[大盤] 搜索 '{query}' 獲取 {len(response.results)} 條結果")
 
+            filtered_news = self._filter_market_review_news(all_news, self.region)
+            if len(filtered_news) != len(all_news):
+                logger.info(
+                    "[大盤] 市場新聞過濾: 保留 %s / %s 條",
+                    len(filtered_news),
+                    len(all_news),
+                )
+            all_news = filtered_news
             logger.info(f"[大盤] 共獲取 {len(all_news)} 條市場新聞")
 
         except Exception as e:
