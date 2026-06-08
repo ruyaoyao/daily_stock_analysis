@@ -95,12 +95,12 @@ class FinMindTwFetcher(BaseFetcher):
             concentration_70=concentration_70,
         )
         logger.info(
-            "[筹码分布] TW%s 日期=%s: 获利比例=%.1%%, 平均成本=%.2f, 90%%集中度=%.2%%, 来源=%s",
+            "[筹码分布] TW%s 日期=%s: 获利比例=%.1f%%, 平均成本=%.2f, 90%%集中度=%.1f%%, 来源=%s",
             bare_code,
             chip.date,
-            chip.profit_ratio,
+            chip.profit_ratio * 100,
             chip.avg_cost,
-            chip.concentration_90,
+            chip.concentration_90 * 100,
             chip.source,
         )
         return chip

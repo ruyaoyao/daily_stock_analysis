@@ -728,6 +728,8 @@ class Config:
     searxng_public_instances_enabled: bool = True  # Auto-discover public SearXNG instances when base URLs are absent
     tw_rss_news_enabled: bool = True  # Taiwan finance RSS news source (free, no API key)
     tw_rss_feed_urls: List[str] = field(default_factory=list)  # Override Taiwan RSS feeds (empty = built-in defaults)
+    tw_rss_google_news_enabled: bool = True  # Google News RSS for Taiwan stock queries
+    tw_rss_finmind_news_enabled: bool = True  # FinMind TaiwanStockNews for Taiwan stock queries
 
     # === Social Sentiment (US stocks only, api.adanos.org) ===
     social_sentiment_api_key: Optional[str] = None
@@ -1411,6 +1413,14 @@ class Config:
                 "TW_RSS_FEED_URLS 中存在无效 URL，已忽略: %s",
                 ", ".join(invalid_tw_rss_urls[:3]),
             )
+        tw_rss_google_news_enabled = parse_env_bool(
+            os.getenv('TW_RSS_GOOGLE_NEWS_ENABLED'),
+            default=True,
+        )
+        tw_rss_finmind_news_enabled = parse_env_bool(
+            os.getenv('TW_RSS_FINMIND_NEWS_ENABLED'),
+            default=True,
+        )
 
         # 企微消息类型与最大字节数逻辑
         wechat_msg_type = os.getenv('WECHAT_MSG_TYPE', 'markdown')
@@ -1560,6 +1570,8 @@ class Config:
             searxng_public_instances_enabled=searxng_public_instances_enabled,
             tw_rss_news_enabled=tw_rss_news_enabled,
             tw_rss_feed_urls=tw_rss_feed_urls,
+            tw_rss_google_news_enabled=tw_rss_google_news_enabled,
+            tw_rss_finmind_news_enabled=tw_rss_finmind_news_enabled,
             social_sentiment_api_key=os.getenv('SOCIAL_SENTIMENT_API_KEY') or None,
             social_sentiment_api_url=os.getenv('SOCIAL_SENTIMENT_API_URL', 'https://api.adanos.org').rstrip('/'),
             news_max_age_days=parse_env_int(os.getenv('NEWS_MAX_AGE_DAYS'), 3, field_name='NEWS_MAX_AGE_DAYS', minimum=1),

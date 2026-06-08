@@ -72,6 +72,9 @@ def build_market_review_runtime(
             ),
             tw_rss_enabled=getattr(config, "tw_rss_news_enabled", True),
             tw_rss_feed_urls=getattr(config, "tw_rss_feed_urls", None),
+            tw_rss_finmind_token=getattr(config, "finmind_token", None),
+            tw_rss_google_news_enabled=getattr(config, "tw_rss_google_news_enabled", True),
+            tw_rss_finmind_news_enabled=getattr(config, "tw_rss_finmind_news_enabled", True),
             news_max_age_days=getattr(config, "news_max_age_days", 3),
             news_strategy_profile=getattr(config, "news_strategy_profile", "short"),
         )

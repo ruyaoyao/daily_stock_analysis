@@ -695,13 +695,69 @@ def merge_tw_into_index_files(data_dir: Path, *, test: bool = False) -> int:
     return 0
 
 
+
+
+def merge_tw_listed_into_index_files(*, test: bool = False) -> int:
+    """Fetch all TWSE-listed securities and merge into existing stocks.index.json."""
+    from data_provider.twse_stock_list import fetch_twse_listed_securities
+
+    listed = fetch_twse_listed_securities()
+    if not listed:
+        print("[Error] 未能从 TWSE Open API 取得上市清单，已跳过合并")
+        return 1
+
+    for item in listed:
+        item["name"] = normalize_stock_name_for_index(item["name"], "TW")
+
+    tw_rows = build_tw_compressed_rows(listed)
+    print(f"      构建上市台股条目：{len(tw_rows)} 条")
+
+    primary = TW_INDEX_FILES[0]
+    if not primary.exists():
+        print(f"[Error] 找不到主索引文件：{primary}")
+        return 1
+
+    with open(primary, "r", encoding="utf-8") as f:
+        existing = json.load(f)
+    kept = [
+        it for it in existing
+        if not (isinstance(it, list) and len(it) > 6 and it[6] == "TW")
+    ]
+    merged = kept + tw_rows
+    print(f"      合并前(非台股)：{len(kept)} 条；合并后：{len(merged)} 条")
+
+    if test:
+        print("      测试模式：跳过写入")
+        return 0
+
+    written = []
+    for path in TW_INDEX_FILES:
+        if path is not primary and not path.exists():
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("[\n")
+            for i, item in enumerate(merged):
+                json.dump(item, f, ensure_ascii=False, separators=(",", ":"))
+                f.write(",\n" if i < len(merged) - 1 else "\n")
+            f.write("]\n")
+        written.append(str(path.relative_to(Path(__file__).parent.parent)))
+    print(f"      已写入：{', '.join(written)}")
+    return 0
+
+
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description='从 CSV 生成股票自动补全索引')
     parser.add_argument(
         '--merge-tw',
         action='store_true',
-        help='仅把精选台股清单合并进现有索引（保留其他市场），不重建整份索引'
+        help='把 data/stock_list_tw.csv 精选台股合并进现有索引（保留其他市场）'
+    )
+    parser.add_argument(
+        '--merge-tw-listed',
+        action='store_true',
+        help='从 TWSE Open API 拉取所有上市证券并合并进现有索引（保留其他市场）'
     )
     parser.add_argument(
         '--source',
@@ -724,6 +780,14 @@ def main():
         return 1
 
     # 合并模式：仅追加精选台股，保留现有其他市场条目（无需 A/HK/US 源 CSV）
+    if args.merge_tw and args.merge_tw_listed:
+        print("[Error] --merge-tw 与 --merge-tw-listed 不可同时使用")
+        return 1
+
+    if args.merge_tw_listed:
+        print("模式：拉取 TWSE 上市清单并合并到现有索引")
+        return merge_tw_listed_into_index_files(test=args.test)
+
     if args.merge_tw:
         print("模式：合并精选台股清单到现有索引")
         data_dir = Path(__file__).parent.parent / 'data'

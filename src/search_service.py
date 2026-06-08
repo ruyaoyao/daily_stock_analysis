@@ -23,7 +23,7 @@ from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import List, Dict, Any, Optional, Tuple
 from itertools import cycle
-from urllib.parse import parse_qsl, unquote, urlparse
+from urllib.parse import parse_qsl, quote, unquote, urlparse
 import requests
 from newspaper import Article, Config
 from tenacity import (
@@ -2117,6 +2117,13 @@ class TaiwanRSSSearchProvider(BaseSearchProvider):
         "https://feeds.feedburner.com/rsscna/finance",
         "https://news.cnyes.com/rss/v1/news/category/headline",
     )
+    YAHOO_TW_STOCK_RSS_URL = "https://tw.stock.yahoo.com/rss?s={code}"
+    GOOGLE_NEWS_RSS_URL = (
+        "https://news.google.com/rss/search?q={query}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+    )
+    FINMIND_NEWS_API_URL = "https://api.finmindtrade.com/api/v4/data"
+    FINMIND_NEWS_DATASET = "TaiwanStockNews"
+    FINMIND_MAX_DAYS_PER_QUERY = 14
 
     FEED_CACHE_TTL_SECONDS = 300
     FEED_TIMEOUT_SECONDS = 6
@@ -2136,13 +2143,24 @@ class TaiwanRSSSearchProvider(BaseSearchProvider):
     _feed_cache: Dict[str, Tuple[float, List["SearchResult"]]] = {}
     _feed_cache_lock = threading.Lock()
 
-    def __init__(self, feed_urls: Optional[List[str]] = None, *, enabled: bool = True):
+    def __init__(
+        self,
+        feed_urls: Optional[List[str]] = None,
+        *,
+        enabled: bool = True,
+        finmind_token: Optional[str] = None,
+        google_news_enabled: bool = True,
+        finmind_news_enabled: bool = True,
+    ):
         normalized = [u.strip().rstrip("/") for u in (feed_urls or []) if u and u.strip()]
         if not normalized:
             normalized = list(self.DEFAULT_FEED_URLS)
         super().__init__([], "TaiwanRSS")
         self._feed_urls = normalized
         self._enabled = bool(enabled)
+        self._finmind_token = (finmind_token or "").strip() or None
+        self._google_news_enabled = bool(google_news_enabled)
+        self._finmind_news_enabled = bool(finmind_news_enabled)
 
     @property
     def is_available(self) -> bool:
@@ -2276,6 +2294,151 @@ class TaiwanRSSSearchProvider(BaseSearchProvider):
             self._feed_cache[feed_url] = (now, list(items))
         return list(items)
 
+
+    @classmethod
+    def _normalize_tw_code(cls, raw: str) -> Optional[str]:
+        """Normalize TW2303 / 2303 style tokens to a bare Yahoo RSS code."""
+        token = (raw or "").strip().upper()
+        if token.startswith("TW") and token[2:].isdigit():
+            token = token[2:]
+        if re.fullmatch(r"\d{4,6}", token):
+            return token
+        return None
+
+    @classmethod
+    def _stock_feed_urls(cls, code_tokens: List[str]) -> List[str]:
+        """Build Yahoo per-stock RSS URLs for the query's TW codes."""
+        urls: List[str] = []
+        seen: set[str] = set()
+        for token in code_tokens:
+            bare = cls._normalize_tw_code(token)
+            if not bare or bare in seen:
+                continue
+            seen.add(bare)
+            urls.append(cls.YAHOO_TW_STOCK_RSS_URL.format(code=bare))
+        return urls
+
+    @classmethod
+    def _google_news_feed_urls(cls, name_tokens: List[str], code_tokens: List[str]) -> List[str]:
+        """Build Google News RSS URLs scoped to the query tokens."""
+        parts: List[str] = []
+        for token in code_tokens:
+            bare = cls._normalize_tw_code(token)
+            if bare and bare not in parts:
+                parts.append(bare)
+        for tok in name_tokens[:2]:
+            if tok and tok not in parts:
+                parts.append(tok)
+        if not parts:
+            return []
+        query = " ".join(parts)
+        return [cls.GOOGLE_NEWS_RSS_URL.format(query=quote(query))]
+
+    @classmethod
+    def _bare_codes_from_tokens(cls, code_tokens: List[str]) -> List[str]:
+        codes: List[str] = []
+        seen: set[str] = set()
+        for token in code_tokens:
+            bare = cls._normalize_tw_code(token)
+            if not bare or bare in seen:
+                continue
+            seen.add(bare)
+            codes.append(bare)
+        return codes
+
+    def _fetch_finmind_stock_news(self, bare_code: str, days: int) -> Optional[List[SearchResult]]:
+        """Fetch FinMind TaiwanStockNews for one code (one API call per day)."""
+        if not self._finmind_news_enabled or not bare_code:
+            return []
+
+        cache_key = f"finmind:{bare_code}:{days}"
+        now = time.time()
+        with self._feed_cache_lock:
+            cached = self._feed_cache.get(cache_key)
+            if cached and now - cached[0] < self.FEED_CACHE_TTL_SECONDS:
+                return list(cached[1])
+
+        lookback = max(1, min(int(days), self.FINMIND_MAX_DAYS_PER_QUERY))
+        today = datetime.now().date()
+        results: List[SearchResult] = []
+        seen_urls: set[str] = set()
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+
+        for offset in range(lookback):
+            day_str = (today - timedelta(days=offset)).strftime("%Y-%m-%d")
+            params: Dict[str, Any] = {
+                "dataset": self.FINMIND_NEWS_DATASET,
+                "data_id": bare_code,
+                "start_date": day_str,
+            }
+            if self._finmind_token:
+                params["token"] = self._finmind_token
+            try:
+                response = requests.get(
+                    self.FINMIND_NEWS_API_URL,
+                    params=params,
+                    headers=headers,
+                    timeout=self.FEED_TIMEOUT_SECONDS,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "[TaiwanRSS] FinMind news %s %s 拉取失败: %s",
+                    bare_code,
+                    day_str,
+                    exc,
+                )
+                continue
+            if response.status_code != 200:
+                logger.warning(
+                    "[TaiwanRSS] FinMind news %s %s HTTP %s",
+                    bare_code,
+                    day_str,
+                    response.status_code,
+                )
+                continue
+            try:
+                payload = response.json()
+            except ValueError as exc:
+                logger.warning(
+                    "[TaiwanRSS] FinMind news %s %s JSON 解析失败: %s",
+                    bare_code,
+                    day_str,
+                    exc,
+                )
+                continue
+            if payload.get("status") != 200 and payload.get("msg") != "success":
+                logger.debug(
+                    "[TaiwanRSS] FinMind news %s %s API msg=%s",
+                    bare_code,
+                    day_str,
+                    payload.get("msg"),
+                )
+                continue
+            for row in payload.get("data") or []:
+                title = self._clean_text(str(row.get("title") or ""))
+                link = str(row.get("link") or "").strip()
+                if not title or not link or link in seen_urls:
+                    continue
+                seen_urls.add(link)
+                source = self._clean_text(str(row.get("source") or "")) or "FinMind"
+                pub = str(row.get("date") or day_str)[:10]
+                results.append(
+                    SearchResult(
+                        title=title,
+                        snippet=title[:500],
+                        url=link,
+                        source=source,
+                        published_date=pub,
+                    )
+                )
+
+        with self._feed_cache_lock:
+            self._feed_cache[cache_key] = (now, list(results))
+        return list(results)
+
     @classmethod
     def _query_tokens(cls, query: str) -> Tuple[List[str], List[str], bool]:
         """Return (name_tokens, code_tokens, has_cjk) extracted from the query."""
@@ -2321,8 +2484,16 @@ class TaiwanRSSSearchProvider(BaseSearchProvider):
             )
 
         merged: List[SearchResult] = []
+        scoped_items: List[SearchResult] = []
         seen_urls = set()
         any_feed_ok = False
+        stock_feed_urls = self._stock_feed_urls(code_tokens)
+        google_feed_urls = (
+            self._google_news_feed_urls(name_tokens, code_tokens)
+            if self._google_news_enabled
+            else []
+        )
+
         for feed_url in self._feed_urls:
             items = self._get_feed_items(feed_url)
             if items is None:
@@ -2334,6 +2505,30 @@ class TaiwanRSSSearchProvider(BaseSearchProvider):
                 seen_urls.add(item.url)
                 merged.append(item)
 
+        for feed_url in stock_feed_urls + google_feed_urls:
+            items = self._get_feed_items(feed_url)
+            if items is None:
+                continue
+            any_feed_ok = True
+            for item in items:
+                if item.url in seen_urls:
+                    continue
+                seen_urls.add(item.url)
+                scoped_items.append(item)
+
+        if self._finmind_news_enabled:
+            for bare_code in self._bare_codes_from_tokens(code_tokens):
+                finmind_items = self._fetch_finmind_stock_news(bare_code, days)
+                if finmind_items is None:
+                    continue
+                if finmind_items:
+                    any_feed_ok = True
+                for item in finmind_items:
+                    if item.url in seen_urls:
+                        continue
+                    seen_urls.add(item.url)
+                    scoped_items.append(item)
+
         if not any_feed_ok:
             return SearchResponse(
                 query=query,
@@ -2344,13 +2539,16 @@ class TaiwanRSSSearchProvider(BaseSearchProvider):
                 search_time=time.time() - start_time,
             )
 
-        ranked = self._sort_by_date_desc(merged)
+        ranked_scoped = self._sort_by_date_desc(scoped_items)
+        ranked_general = self._sort_by_date_desc(merged)
         if name_tokens or code_tokens:
-            # Stock-specific query: keep only items mentioning the stock.
-            selected = [it for it in ranked if self._item_matches(it, name_tokens, code_tokens)]
+            # Per-stock Yahoo / Google News / FinMind feeds are already scoped.
+            selected = ranked_scoped + [
+                it for it in ranked_general if self._item_matches(it, name_tokens, code_tokens)
+            ]
         else:
             # Market-level query (台股/大盘 etc.): return the latest headlines.
-            selected = ranked
+            selected = ranked_general
 
         return SearchResponse(
             query=query,
@@ -2443,6 +2641,9 @@ class SearchService:
         searxng_public_instances_enabled: bool = True,
         tw_rss_enabled: bool = True,
         tw_rss_feed_urls: Optional[List[str]] = None,
+        tw_rss_finmind_token: Optional[str] = None,
+        tw_rss_google_news_enabled: bool = True,
+        tw_rss_finmind_news_enabled: bool = True,
         news_max_age_days: int = 3,
         news_strategy_profile: str = "short",
     ):
@@ -2460,6 +2661,9 @@ class SearchService:
             searxng_public_instances_enabled: 未配置自建实例时，是否自动使用公共 SearXNG 实例
             tw_rss_enabled: 是否启用台股财经 RSS 新闻源（免 key）
             tw_rss_feed_urls: 自定义台股 RSS feed 列表（留空使用内置默认源）
+            tw_rss_finmind_token: FinMind API Token（可选，提升 TaiwanStockNews 配额）
+            tw_rss_google_news_enabled: 是否启用 Google News RSS 个股检索
+            tw_rss_finmind_news_enabled: 是否启用 FinMind TaiwanStockNews
             news_max_age_days: 新闻最大时效（天）
             news_strategy_profile: 新闻窗口策略档位（ultra_short/short/medium/long）
         """
@@ -2524,6 +2728,9 @@ class SearchService:
         tw_rss_provider = TaiwanRSSSearchProvider(
             tw_rss_feed_urls,
             enabled=bool(tw_rss_enabled),
+            finmind_token=tw_rss_finmind_token,
+            google_news_enabled=bool(tw_rss_google_news_enabled),
+            finmind_news_enabled=bool(tw_rss_finmind_news_enabled),
         )
         if tw_rss_provider.is_available:
             self._providers.append(tw_rss_provider)
@@ -4243,6 +4450,13 @@ def get_search_service() -> SearchService:
                     searxng_public_instances_enabled=config.searxng_public_instances_enabled,
                     tw_rss_enabled=getattr(config, "tw_rss_news_enabled", True),
                     tw_rss_feed_urls=getattr(config, "tw_rss_feed_urls", None),
+                    tw_rss_finmind_token=getattr(config, "finmind_token", None),
+                    tw_rss_google_news_enabled=getattr(
+                        config, "tw_rss_google_news_enabled", True
+                    ),
+                    tw_rss_finmind_news_enabled=getattr(
+                        config, "tw_rss_finmind_news_enabled", True
+                    ),
                     news_max_age_days=config.news_max_age_days,
                     news_strategy_profile=getattr(config, "news_strategy_profile", "short"),
                 )

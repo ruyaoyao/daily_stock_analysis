@@ -52,8 +52,14 @@ class TaiwanRSSProviderTest(unittest.TestCase):
     def setUp(self) -> None:
         TaiwanRSSSearchProvider.reset_feed_cache()
 
-    def _provider(self, *, enabled: bool = True) -> TaiwanRSSSearchProvider:
-        return TaiwanRSSSearchProvider([self.FEED], enabled=enabled)
+    def _provider(self, *, enabled: bool = True, **kwargs) -> TaiwanRSSSearchProvider:
+        return TaiwanRSSSearchProvider(
+            [self.FEED],
+            enabled=enabled,
+            google_news_enabled=False,
+            finmind_news_enabled=False,
+            **kwargs,
+        )
 
     @staticmethod
     def _response(*, status_code: int = 200, content: bytes = RSS_XML) -> MagicMock:
@@ -155,8 +161,96 @@ class TaiwanRSSProviderTest(unittest.TestCase):
         ) as mock_get:
             provider.search(f"{TSMC} {CODE_TSMC} 股票 最新消息", max_results=5)
             provider.search(f"某檔 {CODE_MTK} 股票 最新消息", max_results=5)
-        # Second query reuses the cached parse: only one fetch.
-        self.assertEqual(mock_get.call_count, 1)
+        # Generic feed cached once; per-stock Yahoo feeds fetched per distinct code.
+        self.assertEqual(mock_get.call_count, 3)
+
+    @patch("src.search_service.requests.get")
+    def test_per_stock_yahoo_feed_used_when_code_present(self, mock_get) -> None:
+        provider = self._provider()
+
+        def _side_effect(url, **kwargs):
+            if "rss?s=2303" in url:
+                return self._response(content=(
+                    b"""<?xml version='1.0'?><rss version='2.0'><channel><item>"""
+                    b"""<title><![CDATA[\xe8\x81\xaf\xe9\x9b\xbb2303\xe6\xb8\xac\xe8\xa9\xa6]]></title>"""
+                    b"""<link>https://ex.com/stock</link><pubDate>Sun, 07 Jun 2026 18:00:00 +0800</pubDate>"""
+                    b"""<description><![CDATA[\xe8\x81\xaf\xe9\x9b\xbb2303]]></description></item></channel></rss>"""
+                ))
+            return self._response()
+
+        mock_get.side_effect = _side_effect
+        resp = provider.search("聯電 TW2303 股票 最新消息", max_results=5)
+        self.assertTrue(resp.success)
+        self.assertEqual(resp.results[0].url, "https://ex.com/stock")
+        called_urls = [call.args[0] for call in mock_get.call_args_list]
+        self.assertTrue(any("rss?s=2303" in url for url in called_urls))
+
+
+    @patch("src.search_service.requests.get")
+    def test_google_news_feed_used_when_enabled(self, mock_get) -> None:
+        provider = TaiwanRSSSearchProvider(
+            [self.FEED],
+            google_news_enabled=True,
+            finmind_news_enabled=False,
+        )
+
+        def _side_effect(url, **kwargs):
+            if "news.google.com/rss/search" in url:
+                return self._response(content=(
+                    b"""<?xml version='1.0'?><rss version='2.0'><channel><item>"""
+                    b"""<title><![CDATA[\xe8\x81\xaf\xe9\x9b\xbb2303 Google]]></title>"""
+                    b"""<link>https://ex.com/google</link>"""
+                    b"""<pubDate>Sun, 07 Jun 2026 18:00:00 +0800</pubDate>"""
+                    b"""<description><![CDATA[\xe8\x81\xaf\xe9\x9b\xbb2303]]></description></item></channel></rss>"""
+                ))
+            return self._response()
+
+        mock_get.side_effect = _side_effect
+        resp = provider.search("聯電 TW2303 股票 最新消息", max_results=5)
+        self.assertTrue(resp.success)
+        self.assertEqual(resp.results[0].url, "https://ex.com/google")
+        called_urls = [call.args[0] for call in mock_get.call_args_list]
+        self.assertTrue(any("news.google.com/rss/search" in url for url in called_urls))
+
+    @patch("src.search_service.requests.get")
+    def test_finmind_news_merged_when_enabled(self, mock_get) -> None:
+        provider = TaiwanRSSSearchProvider(
+            [self.FEED],
+            google_news_enabled=False,
+            finmind_news_enabled=True,
+        )
+
+        def _side_effect(url, **kwargs):
+            if "api.finmindtrade.com" in url:
+                return MagicMock(
+                    status_code=200,
+                    json=lambda: {
+                        "status": 200,
+                        "msg": "success",
+                        "data": [{
+                            "date": "2026-06-07",
+                            "stock_id": "2303",
+                            "source": "工商時報",
+                            "title": "聯電2303法說會",
+                            "link": "https://ex.com/finmind",
+                        }],
+                    },
+                )
+            return self._response()
+
+        mock_get.side_effect = _side_effect
+        resp = provider.search("聯電 TW2303 股票 最新消息", max_results=5)
+        self.assertTrue(resp.success)
+        urls = [r.url for r in resp.results]
+        self.assertIn("https://ex.com/finmind", urls)
+
+    def test_google_news_feed_urls_build_query(self) -> None:
+        urls = TaiwanRSSSearchProvider._google_news_feed_urls(["聯電"], ["TW2303"])
+        self.assertEqual(len(urls), 1)
+        self.assertIn("news.google.com/rss/search", urls[0])
+        self.assertIn("2303", urls[0])
+        self.assertIn("%E8%81%AF%E9%9B%BB", urls[0])
+
 
 
 class TaiwanRSSRegistrationTest(unittest.TestCase):
@@ -189,6 +283,8 @@ class TaiwanRSSRegistrationTest(unittest.TestCase):
             p for p in service._providers if isinstance(p, TaiwanRSSSearchProvider)
         )
         self.assertEqual(provider.feed_urls, ["https://custom.example.com/rss"])
+
+
 
 
 if __name__ == "__main__":

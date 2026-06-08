@@ -89,8 +89,12 @@ pip install shioaji          # 已加入 requirements.txt
 
 台股个股 / 大盘复盘的新闻情报由内置 RSS 新闻源 `TaiwanRSS` 提供，**免费、免 API Key、默认启用**：
 
-- 默认聚合三个繁中财经 RSS 源：Yahoo 股市（个股新闻，常含「名称(代码)」）、中央社财经（总经）、鉅亨网头条（广度）。
-- 按查询中的**个股名称**与 **4 位台股代码**过滤；**纯英文查询（美股/港股）会自动跳过**，不污染其他市场结果。
+- 默认聚合三个繁中财经 **大盘/头条** RSS 源（Yahoo 股市新闻、中央社财经、鉅亨网头条）。
+- 查询含 4 位台股代码时，额外拉取四套**个股向**来源（均已在 TTL 内缓存，单一源失败跳过）：
+  - **Yahoo 个股 RSS**：`https://tw.stock.yahoo.com/rss?s=代码`
+  - **Google News RSS**：`https://news.google.com/rss/search?q=...&hl=zh-TW&gl=TW`
+  - **FinMind TaiwanStockNews**：`dataset=TaiwanStockNews`（免 Token 可用，配置 `FINMIND_TOKEN` 可提升配额）
+- 按查询中的**个股名称**与 **4 位台股代码**过滤宏观 RSS；**个股向来源不再做二次 token 过滤**。**纯英文查询（美股/港股）会自动跳过**，不污染其他市场结果。
 - 多 feed 抓取结果在 TTL 内共享缓存（默认 5 分钟），整轮自选股分析复用同一批解析结果；**单一 feed 失败会被跳过**，不影响主分析流程。
 - 与其他搜索源（Tavily / Brave / Bocha / SerpAPI / SearXNG 等）共用统一的新闻时效窗口、关联度排序与 fallback 逻辑；当配置了有 key 的源时，`TaiwanRSS` 作为免费兜底参与排序。
 - 相关配置：
@@ -98,12 +102,15 @@ pip install shioaji          # 已加入 requirements.txt
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
 | `TW_RSS_NEWS_ENABLED` | `true` | 是否启用台股 RSS 新闻源；设为 `false` 关闭 |
-| `TW_RSS_FEED_URLS` | 空（用内置默认源） | 逗号分隔的自定义 RSS feed 列表，覆盖默认源 |
+| `TW_RSS_FEED_URLS` | 空（用内置默认源） | 逗号分隔的自定义 RSS feed 列表，覆盖默认宏观源 |
+| `TW_RSS_GOOGLE_NEWS_ENABLED` | `true` | 是否启用 Google News RSS 个股检索 |
+| `TW_RSS_FINMIND_NEWS_ENABLED` | `true` | 是否启用 FinMind `TaiwanStockNews` |
+| `FINMIND_TOKEN` | 空 | FinMind API Token（可选；新闻与筹码分布共用） |
 
 ### 首页个股搜索下拉中的台股
 
 - 下拉候选来自静态索引 `stocks.index.json`，与 `MARKET_TW_ENABLED` 无关（后者只控制抓取/分析/大盘复盘）。
-- 仓库已内置一份精选台股清单（常用 ETF + 权值股，见 `data/stock_list_tw.csv`），其条目带 `tw` 前缀（如 `tw2330`、`tw0050`），选中即提交可路由代码；输入纯数字（如 `2330`）也可命中。
+- 默认可用 `python scripts/generate_index_from_csv.py --merge-tw-listed` 从 TWSE Open API 拉取**所有上市证券**（约 1300+ 档，含 ETF）并写入索引；亦可用 `--merge-tw` 仅合并 `data/stock_list_tw.csv` 精选清单。条目带 `tw` 前缀（如 `tw2330`、`tw2344`），输入纯数字（如 `2344`）也可命中。
 - 扩充清单：编辑 `data/stock_list_tw.csv` 后执行 `python scripts/generate_index_from_csv.py --merge-tw`，会保留其他市场条目、幂等替换台股条目，并同步 `apps/dsa-web/public` / `static` / `data/cache` 三处索引。
 - 即使某代码不在下拉清单中，仍可直接输入 `tw<代码>` 并回车触发分析（后端识别 `tw` 前缀 / `.TW` 后缀经 Shioaji 取数）。
 - 本地若不希望 48 小时远端刷新用上游（无台股）索引覆盖本地缓存，可设 `STOCK_INDEX_REMOTE_UPDATE_ENABLED=false`。
