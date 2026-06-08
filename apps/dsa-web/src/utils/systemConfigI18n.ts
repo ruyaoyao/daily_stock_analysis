@@ -404,6 +404,7 @@ const fieldOptionLabelMap: Record<string, Record<string, string>> = {
     cn: 'A 股',
     hk: '港股',
     us: '美股',
+    tw: '台股',
     both: '全部市场',
   },
   AGENT_ARCH: {
@@ -469,6 +470,7 @@ const fieldOptionLabelMapEn: Record<string, Record<string, string>> = {
     cn: 'A-shares',
     hk: 'Hong Kong',
     us: 'US',
+    tw: 'Taiwan',
     both: 'All markets',
   },
   AGENT_ARCH: {
@@ -488,6 +490,72 @@ const fieldOptionLabelMapEn: Record<string, Record<string, string>> = {
     manual: 'Manual (use AGENT_SKILLS)',
     'auto (regime-based)': 'Auto (regime-based)',
     'manual (use agent_skills)': 'Manual (use AGENT_SKILLS)',
+  },
+};
+
+const fieldOptionLabelMapZhHant: Record<string, Record<string, string>> = {
+  NEWS_STRATEGY_PROFILE: {
+    ultra_short: '超短線（1天）',
+    short: '短期（3天）',
+    medium: '中期（7天）',
+    long: '長期（30天）',
+  },
+  REPORT_TYPE: {
+    simple: '簡潔',
+    full: '完整',
+    brief: '簡報',
+  },
+  REPORT_LANGUAGE: {
+    zh: '中文',
+    en: '英文',
+    chinese: '中文',
+    english: '英文',
+  },
+  NOTIFICATION_MIN_SEVERITY: {
+    '': '未設定',
+    'not set': '未設定',
+    info: '資訊',
+    warning: '警告',
+    error: '錯誤',
+    critical: '嚴重',
+  },
+  MARKET_REVIEW_COLOR_SCHEME: {
+    green_up: '綠漲紅跌',
+    red_up: '紅漲綠跌',
+    'green up / red down': '綠漲紅跌',
+    'red up / green down': '紅漲綠跌',
+  },
+  LOG_LEVEL: {
+    debug: '除錯',
+    info: '資訊',
+    warning: '警告',
+    error: '錯誤',
+    critical: '嚴重',
+  },
+  MARKET_REVIEW_REGION: {
+    cn: 'A 股',
+    hk: '港股',
+    us: '美股',
+    tw: '台股',
+    both: '全部市場',
+  },
+  AGENT_ARCH: {
+    single: '單 Agent',
+    multi: '多 Agent（編排）',
+    'single agent': '單 Agent',
+    'multi agent (orchestrator)': '多 Agent（編排）',
+  },
+  AGENT_ORCHESTRATOR_MODE: {
+    quick: '快速',
+    standard: '標準',
+    full: '完整',
+    specialist: '專家',
+  },
+  AGENT_SKILL_ROUTING: {
+    auto: '自動（按市場狀態）',
+    manual: '手動（使用 AGENT_SKILLS）',
+    'auto (regime-based)': '自動（按市場狀態）',
+    'manual (use agent_skills)': '手動（使用 AGENT_SKILLS）',
   },
 };
 
@@ -529,7 +597,11 @@ export function getFieldOptionLabel(
   fallbackLabel?: string,
   locale: UiLanguage = 'zh',
 ): string {
-  const map = locale === 'en' ? fieldOptionLabelMapEn[key] : fieldOptionLabelMap[key];
+  const map = locale === 'en'
+    ? fieldOptionLabelMapEn[key]
+    : locale === 'zh-Hant'
+      ? (fieldOptionLabelMapZhHant[key] ?? fieldOptionLabelMap[key])
+      : fieldOptionLabelMap[key];
   if (!map) {
     return fallbackLabel ?? value;
   }
