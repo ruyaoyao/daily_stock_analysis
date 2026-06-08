@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] zh-Hant OpenCC 转换后追加两岸常用词领域修正（`shared/zh_hant_phrase_fixes.json`）：股票代碼、支撐位、停損、帳戶、後台、設定等，前后端共用词表。
 - [修复] 台股大盘复盘櫃買指數改用 TPEx OpenAPI（`tpex_index`，无需 Key），修复 yfinance `^TWOII` 数据滞后/不准（如显示前一交易日点位）；并补齐指数级成交额：加權指數取 TWSE `FMTQIK`、櫃買指數取 TPEx `tpex_daily_trading_index`，修复指数表「成交額(億)」列显示 N/A。TPEx 取数失败时回退 yfinance。
 - [修复] `LITELLM_MODEL` / `GEMINI_MODEL` 误填逗号并列时自动拆分为 primary + fallback，避免 LiteLLM 报 invalid model 格式错误。
 - [修复] 台股大盘复盘新闻过滤 crypto/英文噪声（如 Binance/Moomoo「覆盤」），并收紧 `TW_PROFILE.news_queries` 为台股指数/法人相关关键词。

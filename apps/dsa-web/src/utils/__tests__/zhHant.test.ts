@@ -5,7 +5,7 @@ afterEach(() => stopHantDom());
 
 describe('toHant (string conversion)', () => {
   it('converts Simplified to Taiwan Traditional', () => {
-    expect(toHant('创建账户')).toBe('建立賬戶');
+    expect(toHant('创建账户')).toBe('建立帳戶');
     expect(toHant('信息')).toBe('資訊');
     expect(toHant('默认')).toBe('預設');
     expect(toHant('网络质量')).toContain('網路');
@@ -27,7 +27,7 @@ describe('convertTree (DOM)', () => {
     document.body.innerHTML =
       '<div><button>创建账户</button><input placeholder="选择协议" /></div>';
     convertTree(document.body);
-    expect(document.querySelector('button')!.textContent).toBe('建立賬戶');
+    expect(document.querySelector('button')!.textContent).toBe('建立帳戶');
     expect(document.querySelector('input')!.getAttribute('placeholder')).toBe('選擇協議');
   });
 

@@ -16,6 +16,7 @@ import logging
 from typing import Optional
 
 from src.report_language import normalize_report_language
+from src.zh_hant_phrase_fixes import apply_zh_hant_phrase_fixes
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,8 @@ def to_report_script(text: Optional[str], language: Optional[str]) -> Optional[s
     if converter is None:
         return text
     try:
-        return converter.convert(text)
+        converted = converter.convert(text)
+        return apply_zh_hant_phrase_fixes(converted)
     except Exception as exc:
         logger.warning("zh-Hant 繁体转换失败，返回原文：%s", exc)
         return text

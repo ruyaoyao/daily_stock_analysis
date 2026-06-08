@@ -11,6 +11,7 @@
  */
 
 import { Converter } from 'opencc-js';
+import { applyZhHantPhraseFixes } from './zhHantPhraseFixes';
 
 let _convert: ((text: string) => string) | null = null;
 
@@ -41,12 +42,7 @@ export function toHant(text: string): string {
   if (cached !== undefined) {
     return cached;
   }
-  let out = converter()(text);
-  // Domain fix: OpenCC maps 代码 -> 程式碼 (source code), but in this stock app
-  // 代码 means a stock 代碼. Match the curated zh-Hant locale wording.
-  if (out.indexOf('程式碼') !== -1) {
-    out = out.replace(/程式碼/g, '代碼');
-  }
+  const out = applyZhHantPhraseFixes(converter()(text));
   if (_cache.size < _CACHE_LIMIT) {
     _cache.set(text, out);
   }

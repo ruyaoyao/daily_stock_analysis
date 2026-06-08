@@ -56,5 +56,28 @@ def test_converter_failure_returns_original(monkeypatch):
     assert zc.to_report_script("决策仪表盘", "zh-Hant") == "决策仪表盘"
 
 
+
+def test_phrase_fixes_after_opencc(monkeypatch):
+    _reset_converter_cache()
+
+    class _FakeConverter:
+        def convert(self, text: str) -> str:
+            return text.replace("代码", "程式碼").replace("支持位", "支援位")
+
+    monkeypatch.setattr(zc, "_get_converter", lambda: _FakeConverter())
+    result = zc.to_report_script("股票代码/支持位/后台/配置", "zh-Hant")
+    assert "股票代碼" in result
+    assert "支撐位" in result
+    assert "後台" in result
+    assert "設定" in result
+    assert "程式碼" not in result
+    assert "支援位" not in result
+
+
+def test_phrase_fixes_module():
+    from src.zh_hant_phrase_fixes import apply_zh_hant_phrase_fixes
+
+    assert apply_zh_hant_phrase_fixes("止损/止損/用户/数据") == "停損/停損/使用者/資料"
+
 def test_module_imports_clean():
     importlib.reload(zc)
