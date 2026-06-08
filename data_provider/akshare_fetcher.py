@@ -44,7 +44,7 @@ from tenacity import (
 
 from src.patches.eastmoney_patch import eastmoney_patch
 from src.config import get_config
-from .base import BaseFetcher, DataFetchError, RateLimitError, STANDARD_COLUMNS, is_bse_code, is_st_stock, is_kc_cy_stock, normalize_stock_code
+from .base import BaseFetcher, DataFetchError, RateLimitError, STANDARD_COLUMNS, _is_tw_market, is_bse_code, is_st_stock, is_kc_cy_stock, normalize_stock_code
 from .realtime_types import (
     UnifiedRealtimeQuote, ChipDistribution, RealtimeSource,
     get_realtime_circuit_breaker, get_chip_circuit_breaker,
@@ -1592,6 +1592,11 @@ class AkshareFetcher(BaseFetcher):
         # 美股没有筹码分布数据（Akshare 不支持）
         if _is_us_code(stock_code):
             logger.debug(f"[API跳过] {stock_code} 是美股，无筹码分布数据")
+            return None
+
+        # 台股筹码分布由 TDCC/FinMind 专用数据源提供
+        if _is_tw_market(stock_code):
+            logger.debug(f"[API跳过] {stock_code} 是台股，Akshare 不提供筹码分布")
             return None
 
         # 港股没有筹码分布数据（stock_cyq_em 是 A 股专属接口）

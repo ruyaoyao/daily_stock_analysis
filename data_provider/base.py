@@ -1137,6 +1137,9 @@ class DataFetcherManager:
         else:
             logger.debug("[数据源初始化] 跳过未配置的 ShioajiTwFetcher")
 
+        from .finmind_tw_fetcher import FinMindTwFetcher
+        optional_fetchers.append(FinMindTwFetcher())
+
         # 初始化数据源列表
         self._ensure_concurrency_guards()
         with self._fetchers_lock:
@@ -1945,11 +1948,18 @@ class DataFetcherManager:
             return None
 
         circuit_breaker = get_chip_circuit_breaker()
+        is_tw = _is_tw_market(stock_code)
+        _TW_CHIP_FETCHERS = {"FinMindTwFetcher"}
 
         # 直接遍历管理器已经按 priority 排好序的数据源列表
         for fetcher in self._get_fetchers_snapshot():
             # 只处理实现了筹码分布逻辑的数据源
             if not hasattr(fetcher, 'get_chip_distribution'):
+                continue
+
+            if is_tw and fetcher.name not in _TW_CHIP_FETCHERS:
+                continue
+            if (not is_tw) and fetcher.name in _TW_CHIP_FETCHERS:
                 continue
             
             fetcher_name = fetcher.name
