@@ -182,3 +182,34 @@ class TestNormalizeCode:
     def test_partial_prefix_no_digits_returns_none(self):
         # SH followed by wrong digit count
         assert normalize_code("SH6005") is None
+
+
+class TestTaiwanCodes:
+    """Taiwan codes require an explicit TW prefix or .TW/.TWO suffix."""
+
+    @pytest.mark.parametrize("code", ["tw0050", "TW2330", "tw006208", "0050.TW", "2330.TWO"])
+    def test_tw_is_code_like(self, code):
+        assert is_code_like(code) is True
+
+    @pytest.mark.parametrize(
+        "code,expected",
+        [
+            ("tw0050", "TW0050"),
+            ("TW2330", "TW2330"),
+            ("tw006208", "TW006208"),
+            ("0050.TW", "TW0050"),
+            ("2330.TWO", "TW2330"),
+        ],
+    )
+    def test_tw_normalize(self, code, expected):
+        assert normalize_code(code) == expected
+
+    def test_bare_4_digit_without_prefix_is_not_tw(self):
+        # Bare 4-digit must not be treated as a stock code (avoids ambiguity).
+        assert is_code_like("2330") is False
+        assert normalize_code("2330") is None
+
+    def test_tw_two_letter_ticker_not_misparsed(self):
+        # "TW" alone is a valid US ticker, not a Taiwan code.
+        assert normalize_code("TW") == "TW"
+

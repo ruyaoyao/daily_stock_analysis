@@ -580,9 +580,129 @@ def compress_index(index: List[Dict[str, Any]]) -> List[List]:
     return compressed
 
 
+# === 台股精选清单支持（ETF + 权值股，免金钥） ===
+TW_INDEX_FILES = (
+    Path(__file__).parent.parent / "apps" / "dsa-web" / "public" / "stocks.index.json",
+    Path(__file__).parent.parent / "static" / "stocks.index.json",
+    Path(__file__).parent.parent / "data" / "cache" / "stocks.index.json",
+)
+
+
+def load_tw_curated(data_dir: Path) -> List[Dict[str, Any]]:
+    """加载 data/stock_list_tw.csv 的精选台股/ETF 清单。"""
+    csv_file = data_dir / "stock_list_tw.csv"
+    if not csv_file.exists():
+        print(f"[Warning] 未找到台股清单：{csv_file}")
+        return []
+
+    rows: List[Dict[str, Any]] = []
+    with open(csv_file, "r", encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f):
+            symbol = (row.get("symbol") or "").strip()
+            name = normalize_stock_name_for_index(row.get("name") or "", "TW")
+            # 台股代码为 4-6 位数字，必须可被后端 TW 前缀检测识别
+            if not symbol.isdigit() or not (4 <= len(symbol) <= 6) or not name:
+                if symbol or name:
+                    print(f"[Warning] 跳过无效台股行: symbol={symbol!r} name={name!r}")
+                continue
+            asset_type = (row.get("type") or "stock").strip().lower()
+            if asset_type not in {"stock", "etf", "index"}:
+                asset_type = "stock"
+            extra_aliases = [a.strip() for a in (row.get("aliases") or "").split("|") if a.strip()]
+            rows.append({
+                "symbol": symbol,
+                "name": name,
+                "asset_type": asset_type,
+                "aliases": extra_aliases,
+            })
+    return rows
+
+
+def build_tw_compressed_rows(curated: List[Dict[str, Any]]) -> List[List]:
+    """构建台股压缩索引行。
+
+    台股的 canonicalCode 与 displayCode 都带显式 ``tw`` 前缀，使得在下拉中
+    选中条目后提交的是可路由代码（后端依 ``TW`` 前缀 / ``.TW`` 后缀识别台股）。
+    纯数字代码作为别名保留，用户输入 ``2330`` 仍可命中。
+    """
+    rows: List[List] = []
+    for item in curated:
+        symbol = item["symbol"]
+        name = item["name"]
+        pinyin_full, pinyin_abbr = generate_pinyin(name)
+        aliases = list(dict.fromkeys([symbol, *item["aliases"]]))
+        rows.append([
+            f"tw{symbol}",       # canonicalCode：选中后提交，TW 可路由
+            f"tw{symbol}",       # displayCode：输入框展示
+            name,
+            pinyin_full,
+            pinyin_abbr,
+            aliases,
+            "TW",
+            item["asset_type"],
+            True,
+            100,
+        ])
+    return rows
+
+
+def merge_tw_into_index_files(data_dir: Path, *, test: bool = False) -> int:
+    """把精选台股合并进现有 stocks.index.json，保留其他市场条目。
+
+    保留全部既有 (CN/HK/US/BSE) 条目，幂等替换历史 TW 条目，并同步所有已存在
+    的索引文件，使本地服务无论解析到哪个候选路径都返回一致数据。
+    """
+    curated = load_tw_curated(data_dir)
+    if not curated:
+        print("[Error] 未读取到任何台股条目，已跳过合并")
+        return 1
+
+    tw_rows = build_tw_compressed_rows(curated)
+    print(f"      构建台股条目：{len(tw_rows)} 条")
+
+    primary = TW_INDEX_FILES[0]
+    if not primary.exists():
+        print(f"[Error] 找不到主索引文件：{primary}")
+        return 1
+
+    with open(primary, "r", encoding="utf-8") as f:
+        existing = json.load(f)
+    kept = [
+        it for it in existing
+        if not (isinstance(it, list) and len(it) > 6 and it[6] == "TW")
+    ]
+    merged = kept + tw_rows
+    print(f"      合并前(非台股)：{len(kept)} 条；合并后：{len(merged)} 条")
+
+    if test:
+        print("      测试模式：跳过写入")
+        return 0
+
+    written = []
+    for path in TW_INDEX_FILES:
+        # 仅同步已存在的运行期副本（static / data/cache），主文件始终写入
+        if path is not primary and not path.exists():
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("[\n")
+            for i, item in enumerate(merged):
+                json.dump(item, f, ensure_ascii=False, separators=(",", ":"))
+                f.write(",\n" if i < len(merged) - 1 else "\n")
+            f.write("]\n")
+        written.append(str(path.relative_to(Path(__file__).parent.parent)))
+    print(f"      已写入：{', '.join(written)}")
+    return 0
+
+
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description='从 CSV 生成股票自动补全索引')
+    parser.add_argument(
+        '--merge-tw',
+        action='store_true',
+        help='仅把精选台股清单合并进现有索引（保留其他市场），不重建整份索引'
+    )
     parser.add_argument(
         '--source',
         choices=['tushare', 'akshare'],
@@ -599,10 +719,17 @@ def main():
     print("=" * 60)
     print("股票索引生成工具（从 CSV）")
     print("=" * 60)
-    print(f"数据源：{args.source}")
 
     if not require_pypinyin():
         return 1
+
+    # 合并模式：仅追加精选台股，保留现有其他市场条目（无需 A/HK/US 源 CSV）
+    if args.merge_tw:
+        print("模式：合并精选台股清单到现有索引")
+        data_dir = Path(__file__).parent.parent / 'data'
+        return merge_tw_into_index_files(data_dir, test=args.test)
+
+    print(f"数据源：{args.source}")
 
     # 加载数据
     print("\n[1/5] 读取 CSV 数据...")

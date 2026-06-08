@@ -38,6 +38,26 @@ def _valid_exchange_code(exchange: str, base: str, digit_lens: tuple[int, ...]) 
     return True
 
 
+def _normalize_tw_code(text: str) -> Optional[str]:
+    """Recognize Taiwan codes and return canonical ``TW<digits>``.
+
+    Taiwan codes are 4-6 digits and MUST carry an explicit ``TW`` prefix or
+    ``.TW`` / ``.TWO`` suffix (e.g. ``TW2330``, ``tw0050``, ``2330.TW``) so they
+    never collide with bare-digit A-share (6) / HK (5) detection.
+    """
+    if text.startswith("TW"):
+        base = text[2:]
+    elif text.endswith(".TWO"):
+        base = text[:-4]
+    elif text.endswith(".TW"):
+        base = text[:-3]
+    else:
+        return None
+    if base.isdigit() and 4 <= len(base) <= 6:
+        return "TW" + base
+    return None
+
+
 def _strip_exchange_prefix(text: str) -> Optional[str]:
     """Strip leading exchange prefix (SH/SZ/HK etc.) and return the bare digits, or None."""
     for prefix, digit_lens in _PREFIX_DIGIT_LENS.items():
@@ -66,6 +86,8 @@ def is_code_like(value: str) -> bool:
         return False
     if text.isdigit() and len(text) in (5, 6):
         return True
+    if _normalize_tw_code(text) is not None:
+        return True
     if _strip_exchange_suffix(text) is not None:
         return True
     if re.match(r"^[A-Z]{1,5}(?:\.(?:US|[A-Z]))?$", text):
@@ -83,6 +105,7 @@ def normalize_code(raw: str) -> Optional[str]:
     - Plain digit codes: 600519, 00700
     - Suffix format: 600519.SH, 600519.SZ, 920493.BJ, 00700.HK
     - Prefix format: SH600519, SZ000001, BJ920493, HK00700 (case-insensitive)
+    - Taiwan codes: TW2330, tw0050, 2330.TW, 2330.TWO -> TW2330 / TW0050
     - US ticker symbols: AAPL, TSLA
     """
     text = raw.strip().upper()
@@ -90,6 +113,9 @@ def normalize_code(raw: str) -> Optional[str]:
         return None
     if text.isdigit() and len(text) in (5, 6):
         return text
+    tw_code = _normalize_tw_code(text)
+    if tw_code is not None:
+        return tw_code
     if re.match(r"^[A-Z]{1,5}(?:\.(?:US|[A-Z]))?$", text):
         return text
     stripped_suffix = _strip_exchange_suffix(text)

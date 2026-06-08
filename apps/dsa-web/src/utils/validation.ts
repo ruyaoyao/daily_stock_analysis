@@ -13,6 +13,8 @@ const STOCK_CODE_PATTERNS = [
   /^\d{5}$/, // HK code without prefix
   /^HK\d{1,5}$/, // HK-prefixed code, for example HK00700
   /^\d{1,5}\.HK$/, // HK suffix format, for example 00700.HK
+  /^TW\d{4,6}$/, // Taiwan prefix format, for example TW2330 / TW0050
+  /^\d{4,6}\.TWO?$/, // Taiwan suffix format, for example 2330.TW / 2330.TWO
   /^[A-Z]{1,5}(?:\.(?:US|[A-Z]))?$/, // Common US ticker format
 ];
 
