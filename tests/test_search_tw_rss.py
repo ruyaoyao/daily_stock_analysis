@@ -1,0 +1,195 @@
+# -*- coding: utf-8 -*-
+"""Unit tests for the Taiwan finance RSS search provider (TaiwanRSS)."""
+
+import sys
+import unittest
+from unittest.mock import MagicMock, patch
+
+# Mock newspaper before search_service import (optional dependency).
+if "newspaper" not in sys.modules:
+    mock_np = MagicMock()
+    mock_np.Article = MagicMock()
+    mock_np.Config = MagicMock()
+    sys.modules["newspaper"] = mock_np
+
+from src.search_service import SearchService, TaiwanRSSSearchProvider
+
+
+RSS_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>測試財經</title>
+    <item>
+      <title><![CDATA[台積電2330領軍 台股創高]]></title>
+      <link>https://ex.com/a</link>
+      <pubDate>Sun, 07 Jun 2026 18:00:00 +0800</pubDate>
+      <description><![CDATA[<p>台積電 2330 今日大漲</p>]]></description>
+    </item>
+    <item>
+      <title><![CDATA[聯發科法說會]]></title>
+      <link>https://ex.com/b</link>
+      <pubDate>Sat, 06 Jun 2026 10:00:00 +0800</pubDate>
+      <description><![CDATA[聯發科 2454 表示展望樂觀]]></description>
+    </item>
+    <item>
+      <title><![CDATA[美股道瓊收紅]]></title>
+      <link>https://ex.com/c</link>
+      <pubDate>Fri, 05 Jun 2026 22:00:00 +0800</pubDate>
+      <description><![CDATA[華爾街漲勢]]></description>
+    </item>
+  </channel>
+</rss>""".encode("utf-8")
+
+# Decoded reference tokens for readable assertions.
+TSMC = "台積電"  # appears in item a
+CODE_TSMC = "2330"
+CODE_MTK = "2454"  # appears in item b description
+
+
+class TaiwanRSSProviderTest(unittest.TestCase):
+    FEED = "https://feeds.example.com/tw-finance"
+
+    def setUp(self) -> None:
+        TaiwanRSSSearchProvider.reset_feed_cache()
+
+    def _provider(self, *, enabled: bool = True) -> TaiwanRSSSearchProvider:
+        return TaiwanRSSSearchProvider([self.FEED], enabled=enabled)
+
+    @staticmethod
+    def _response(*, status_code: int = 200, content: bytes = RSS_XML) -> MagicMock:
+        resp = MagicMock()
+        resp.status_code = status_code
+        resp.content = content
+        return resp
+
+    def test_is_available_respects_enabled_flag(self) -> None:
+        self.assertTrue(self._provider().is_available)
+        self.assertFalse(self._provider(enabled=False).is_available)
+
+    def test_defaults_used_when_no_feeds_supplied(self) -> None:
+        provider = TaiwanRSSSearchProvider(None)
+        self.assertEqual(
+            provider.feed_urls,
+            [u.rstrip("/") for u in TaiwanRSSSearchProvider.DEFAULT_FEED_URLS],
+        )
+
+    def test_parse_extracts_fields_and_strips_html(self) -> None:
+        items = TaiwanRSSSearchProvider._parse_rss(RSS_XML, self.FEED)
+        self.assertEqual(len(items), 3)
+        first = items[0]
+        self.assertIn(TSMC, first.title)
+        self.assertEqual(first.url, "https://ex.com/a")
+        self.assertEqual(first.published_date, "2026-06-07")
+        # HTML tags stripped from the description.
+        self.assertNotIn("<p>", first.snippet)
+        self.assertIn(TSMC, first.snippet)
+
+    def test_pubdate_normalized_across_timezones(self) -> None:
+        self.assertEqual(
+            TaiwanRSSSearchProvider._normalize_pubdate("Fri, 05 Jun 2026 22:00:00 +0800"),
+            "2026-06-05",
+        )
+        self.assertEqual(
+            TaiwanRSSSearchProvider._normalize_pubdate("Sun, 07 Jun 2026 12:22:09 GMT"),
+            "2026-06-07",
+        )
+        self.assertIsNone(TaiwanRSSSearchProvider._normalize_pubdate(None))
+
+    def test_stock_specific_query_filters_by_name_and_code(self) -> None:
+        provider = self._provider()
+        with patch("src.search_service.requests.get", return_value=self._response()):
+            resp = provider.search(f"{TSMC} {CODE_TSMC} 股票 最新消息", max_results=5)
+        self.assertTrue(resp.success)
+        self.assertEqual([r.url for r in resp.results], ["https://ex.com/a"])
+
+    def test_query_matches_by_code_only(self) -> None:
+        provider = self._provider()
+        with patch("src.search_service.requests.get", return_value=self._response()):
+            resp = provider.search(f"某檔 {CODE_MTK} 股票 最新消息", max_results=5)
+        self.assertTrue(resp.success)
+        self.assertEqual([r.url for r in resp.results], ["https://ex.com/b"])
+
+    def test_market_query_returns_latest_headlines_sorted(self) -> None:
+        provider = self._provider()
+        with patch("src.search_service.requests.get", return_value=self._response()):
+            resp = provider.search("台股 大盤 行情", max_results=5)
+        self.assertTrue(resp.success)
+        # All items, newest first.
+        self.assertEqual(
+            [r.url for r in resp.results],
+            ["https://ex.com/a", "https://ex.com/b", "https://ex.com/c"],
+        )
+
+    def test_non_taiwan_query_short_circuits_without_network(self) -> None:
+        provider = self._provider()
+        with patch("src.search_service.requests.get") as mock_get:
+            resp = provider.search("Apple AAPL stock latest news", max_results=5)
+        self.assertTrue(resp.success)
+        self.assertEqual(resp.results, [])
+        mock_get.assert_not_called()
+
+    def test_all_feeds_unavailable_reports_failure(self) -> None:
+        provider = self._provider()
+        with patch(
+            "src.search_service.requests.get",
+            return_value=self._response(status_code=503),
+        ):
+            resp = provider.search(f"{TSMC} {CODE_TSMC} 股票 最新消息", max_results=5)
+        self.assertFalse(resp.success)
+        self.assertEqual(resp.results, [])
+
+    def test_feed_failure_is_swallowed_not_raised(self) -> None:
+        provider = self._provider()
+        with patch(
+            "src.search_service.requests.get",
+            side_effect=Exception("boom"),
+        ):
+            resp = provider.search(f"{TSMC} {CODE_TSMC} 股票 最新消息", max_results=5)
+        self.assertFalse(resp.success)
+
+    def test_feeds_cached_within_ttl(self) -> None:
+        provider = self._provider()
+        with patch(
+            "src.search_service.requests.get",
+            return_value=self._response(),
+        ) as mock_get:
+            provider.search(f"{TSMC} {CODE_TSMC} 股票 最新消息", max_results=5)
+            provider.search(f"某檔 {CODE_MTK} 股票 最新消息", max_results=5)
+        # Second query reuses the cached parse: only one fetch.
+        self.assertEqual(mock_get.call_count, 1)
+
+
+class TaiwanRSSRegistrationTest(unittest.TestCase):
+    """TaiwanRSS provider registration inside SearchService."""
+
+    def setUp(self) -> None:
+        TaiwanRSSSearchProvider.reset_feed_cache()
+
+    def test_registered_by_default(self) -> None:
+        service = SearchService(searxng_public_instances_enabled=False)
+        self.assertTrue(
+            any(isinstance(p, TaiwanRSSSearchProvider) for p in service._providers)
+        )
+
+    def test_not_registered_when_disabled(self) -> None:
+        service = SearchService(
+            searxng_public_instances_enabled=False,
+            tw_rss_enabled=False,
+        )
+        self.assertFalse(
+            any(isinstance(p, TaiwanRSSSearchProvider) for p in service._providers)
+        )
+
+    def test_custom_feed_urls_applied(self) -> None:
+        service = SearchService(
+            searxng_public_instances_enabled=False,
+            tw_rss_feed_urls=["https://custom.example.com/rss"],
+        )
+        provider = next(
+            p for p in service._providers if isinstance(p, TaiwanRSSSearchProvider)
+        )
+        self.assertEqual(provider.feed_urls, ["https://custom.example.com/rss"])
+
+
+if __name__ == "__main__":
+    unittest.main()

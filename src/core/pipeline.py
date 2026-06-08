@@ -147,6 +147,8 @@ class StockAnalysisPipeline:
                 minimax_keys=self.config.minimax_api_keys,
                 searxng_base_urls=self.config.searxng_base_urls,
                 searxng_public_instances_enabled=self.config.searxng_public_instances_enabled,
+                tw_rss_enabled=getattr(self.config, "tw_rss_news_enabled", True),
+                tw_rss_feed_urls=getattr(self.config, "tw_rss_feed_urls", None),
                 news_max_age_days=self.config.news_max_age_days,
                 news_strategy_profile=getattr(self.config, "news_strategy_profile", "short"),
             )

@@ -11,10 +11,12 @@ A股自选股智能分析系统 - 搜索服务模块
 4. 搜索结果缓存和格式化
 """
 
+import html
 import logging
 import re
 import threading
 import time
+import xml.etree.ElementTree as ET
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -2093,10 +2095,276 @@ class SearXNGSearchProvider(BaseSearchProvider):
         )
 
 
+class TaiwanRSSSearchProvider(BaseSearchProvider):
+    """Taiwan finance-news RSS provider (free, no API key).
+
+    Aggregates a small set of Traditional-Chinese finance RSS feeds and filters
+    items by the query's stock-name tokens / 4-digit TWSE-TPEX code. It is
+    intentionally narrow: queries without CJK text and without a 4-digit code
+    (e.g. US/HK English queries such as ``Apple AAPL stock latest news``)
+    short-circuit to an empty success so non-Taiwan markets are never polluted
+    with Taiwan headlines.
+
+    Feeds are fetched at most once per TTL and cached across queries, so a full
+    watchlist run reuses the parsed items instead of re-fetching per stock. A
+    single failing feed is skipped and never blocks the main analysis flow.
+    """
+
+    # Default feeds (verified RSS 2.0, zh-Hant): Yahoo 股市 (best per-stock,
+    # frequently embeds ``名稱(代號)``), 中央社 (macro), 鉅亨网 (broad finance).
+    DEFAULT_FEED_URLS = (
+        "https://tw.stock.yahoo.com/rss?category=news",
+        "https://feeds.feedburner.com/rsscna/finance",
+        "https://news.cnyes.com/rss/v1/news/category/headline",
+    )
+
+    FEED_CACHE_TTL_SECONDS = 300
+    FEED_TIMEOUT_SECONDS = 6
+    MAX_ITEMS_PER_FEED = 60
+
+    # Generic query words that must not be treated as a stock-name token.
+    _QUERY_STOPWORDS = frozenset({
+        "股票", "最新消息", "最新", "消息", "新聞", "新闻", "台股", "臺股",
+        "大盤", "大盘", "行情", "走勢", "走势", "市場", "市场", "分析", "個股", "个股",
+    })
+    _CJK_RE = re.compile(r"[㐀-䶿一-鿿]")
+    _CJK_RUN_RE = re.compile(r"[㐀-䶿一-鿿]{2,}")
+    _TW_CODE_RE = re.compile(r"(?<!\d)\d{4}(?!\d)")
+    _HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+    # Shared across instances so repeated per-stock queries reuse parsed feeds.
+    _feed_cache: Dict[str, Tuple[float, List["SearchResult"]]] = {}
+    _feed_cache_lock = threading.Lock()
+
+    def __init__(self, feed_urls: Optional[List[str]] = None, *, enabled: bool = True):
+        normalized = [u.strip().rstrip("/") for u in (feed_urls or []) if u and u.strip()]
+        if not normalized:
+            normalized = list(self.DEFAULT_FEED_URLS)
+        super().__init__([], "TaiwanRSS")
+        self._feed_urls = normalized
+        self._enabled = bool(enabled)
+
+    @property
+    def is_available(self) -> bool:
+        return bool(self._enabled and self._feed_urls)
+
+    @property
+    def feed_urls(self) -> List[str]:
+        return list(self._feed_urls)
+
+    @classmethod
+    def reset_feed_cache(cls) -> None:
+        """Clear the shared feed cache (used by tests)."""
+        with cls._feed_cache_lock:
+            cls._feed_cache = {}
+
+    @staticmethod
+    def _extract_domain(url: str) -> str:
+        try:
+            return urlparse(url).netloc.replace("www.", "") or "台股 RSS"
+        except Exception:
+            return "台股 RSS"
+
+    @classmethod
+    def _clean_text(cls, value: Optional[str]) -> str:
+        if not value:
+            return ""
+        text = cls._HTML_TAG_RE.sub(" ", value)
+        return " ".join(html.unescape(text).split())
+
+    @staticmethod
+    def _normalize_pubdate(raw: Optional[str]) -> Optional[str]:
+        if not raw or not raw.strip():
+            return None
+        try:
+            return parsedate_to_datetime(raw.strip()).strftime("%Y-%m-%d")
+        except (TypeError, ValueError, IndexError):
+            return raw.strip()
+
+    @classmethod
+    def _parse_rss(cls, content: bytes, feed_url: str) -> List[SearchResult]:
+        """Parse RSS 2.0 bytes into SearchResult items (no query filtering)."""
+        try:
+            root = ET.fromstring(content)
+        except ET.ParseError as exc:
+            logger.warning("[TaiwanRSS] feed %s XML 解析失败: %s", feed_url, exc)
+            return []
+
+        channel = root.find("channel")
+        items_parent = channel if channel is not None else root
+        source_label = ""
+        if channel is not None:
+            source_label = (channel.findtext("title") or "").strip()
+        if not source_label:
+            source_label = cls._extract_domain(feed_url)
+
+        results: List[SearchResult] = []
+        for item in items_parent.findall("item")[: cls.MAX_ITEMS_PER_FEED]:
+            title = cls._clean_text(item.findtext("title"))
+            link = (item.findtext("link") or "").strip()
+            if not title or not link:
+                continue
+            results.append(
+                SearchResult(
+                    title=title,
+                    snippet=cls._clean_text(item.findtext("description"))[:500],
+                    url=link,
+                    source=source_label,
+                    published_date=cls._normalize_pubdate(item.findtext("pubDate")),
+                )
+            )
+        return results
+
+    def _fetch_and_parse_feed(self, feed_url: str, *, timeout: int) -> Optional[List[SearchResult]]:
+        """Fetch and parse one feed; return None on fetch/HTTP failure."""
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        try:
+            response = requests.get(feed_url, headers=headers, timeout=timeout)
+        except Exception as exc:
+            logger.warning("[TaiwanRSS] feed %s 拉取失败: %s", feed_url, exc)
+            return None
+        if response.status_code != 200:
+            logger.warning("[TaiwanRSS] feed %s HTTP %s", feed_url, response.status_code)
+            return None
+        return self._parse_rss(response.content, feed_url)
+
+    def _do_search(  # type: ignore[override]
+        self,
+        query: str,
+        feed_url: str,
+        max_results: int,
+        days: int = 7,
+        *,
+        timeout: int = FEED_TIMEOUT_SECONDS,
+    ) -> SearchResponse:
+        """ABC contract: fetch a single feed (no query filtering)."""
+        items = self._fetch_and_parse_feed(feed_url, timeout=timeout)
+        if items is None:
+            return SearchResponse(
+                query=query,
+                results=[],
+                provider=self.name,
+                success=False,
+                error_message=f"{feed_url} 拉取失败",
+            )
+        return SearchResponse(
+            query=query,
+            results=items[:max_results],
+            provider=self.name,
+            success=True,
+        )
+
+    def _get_feed_items(self, feed_url: str) -> Optional[List[SearchResult]]:
+        """Return parsed items for a feed, honoring the shared TTL cache."""
+        now = time.time()
+        with self._feed_cache_lock:
+            cached = self._feed_cache.get(feed_url)
+            if cached and now - cached[0] < self.FEED_CACHE_TTL_SECONDS:
+                return list(cached[1])
+
+        items = self._fetch_and_parse_feed(feed_url, timeout=self.FEED_TIMEOUT_SECONDS)
+        if items is None:
+            # Fall back to stale cache if available; otherwise signal failure.
+            with self._feed_cache_lock:
+                cached = self._feed_cache.get(feed_url)
+                return list(cached[1]) if cached else None
+
+        with self._feed_cache_lock:
+            self._feed_cache[feed_url] = (now, list(items))
+        return list(items)
+
+    @classmethod
+    def _query_tokens(cls, query: str) -> Tuple[List[str], List[str], bool]:
+        """Return (name_tokens, code_tokens, has_cjk) extracted from the query."""
+        text = query or ""
+        has_cjk = bool(cls._CJK_RE.search(text))
+        code_tokens = cls._TW_CODE_RE.findall(text)
+        name_tokens = [
+            run for run in cls._CJK_RUN_RE.findall(text)
+            if run not in cls._QUERY_STOPWORDS
+        ]
+        return name_tokens, code_tokens, has_cjk
+
+    @staticmethod
+    def _item_matches(item: SearchResult, name_tokens: List[str], code_tokens: List[str]) -> bool:
+        haystack = f"{item.title} {item.snippet}"
+        return any(tok and tok in haystack for tok in name_tokens) or any(
+            code and code in haystack for code in code_tokens
+        )
+
+    @staticmethod
+    def _sort_by_date_desc(items: List[SearchResult]) -> List[SearchResult]:
+        def sort_key(item: SearchResult) -> datetime:
+            raw = item.published_date or ""
+            try:
+                return datetime.strptime(raw[:10], "%Y-%m-%d")
+            except ValueError:
+                return datetime.min
+        return sorted(items, key=sort_key, reverse=True)
+
+    def search(self, query: str, max_results: int = 5, days: int = 7) -> SearchResponse:
+        """Aggregate Taiwan RSS feeds and filter by the query's stock tokens."""
+        start_time = time.time()
+        name_tokens, code_tokens, has_cjk = self._query_tokens(query)
+
+        # Non-Taiwan (e.g. US/HK English) query: skip without any network call.
+        if not has_cjk and not code_tokens:
+            return SearchResponse(
+                query=query,
+                results=[],
+                provider=self.name,
+                success=True,
+                search_time=time.time() - start_time,
+            )
+
+        merged: List[SearchResult] = []
+        seen_urls = set()
+        any_feed_ok = False
+        for feed_url in self._feed_urls:
+            items = self._get_feed_items(feed_url)
+            if items is None:
+                continue
+            any_feed_ok = True
+            for item in items:
+                if item.url in seen_urls:
+                    continue
+                seen_urls.add(item.url)
+                merged.append(item)
+
+        if not any_feed_ok:
+            return SearchResponse(
+                query=query,
+                results=[],
+                provider=self.name,
+                success=False,
+                error_message="台股 RSS 源全部不可用",
+                search_time=time.time() - start_time,
+            )
+
+        ranked = self._sort_by_date_desc(merged)
+        if name_tokens or code_tokens:
+            # Stock-specific query: keep only items mentioning the stock.
+            selected = [it for it in ranked if self._item_matches(it, name_tokens, code_tokens)]
+        else:
+            # Market-level query (台股/大盘 etc.): return the latest headlines.
+            selected = ranked
+
+        return SearchResponse(
+            query=query,
+            results=selected[:max_results],
+            provider=self.name,
+            success=True,
+            search_time=time.time() - start_time,
+        )
+
+
 class SearchService:
     """
     搜索服务
-    
+
     功能：
     1. 管理多个搜索引擎
     2. 自动故障转移
@@ -2173,6 +2441,8 @@ class SearchService:
         minimax_keys: Optional[List[str]] = None,
         searxng_base_urls: Optional[List[str]] = None,
         searxng_public_instances_enabled: bool = True,
+        tw_rss_enabled: bool = True,
+        tw_rss_feed_urls: Optional[List[str]] = None,
         news_max_age_days: int = 3,
         news_strategy_profile: str = "short",
     ):
@@ -2188,6 +2458,8 @@ class SearchService:
             minimax_keys: MiniMax API Key 列表
             searxng_base_urls: SearXNG 实例地址列表（自建无配额兜底）
             searxng_public_instances_enabled: 未配置自建实例时，是否自动使用公共 SearXNG 实例
+            tw_rss_enabled: 是否启用台股财经 RSS 新闻源（免 key）
+            tw_rss_feed_urls: 自定义台股 RSS feed 列表（留空使用内置默认源）
             news_max_age_days: 新闻最大时效（天）
             news_strategy_profile: 新闻窗口策略档位（ultra_short/short/medium/long）
         """
@@ -2247,7 +2519,17 @@ class SearchService:
             else:
                 logger.info("已启用 SearXNG 公共实例自动发现模式")
 
-        # 7. Anspire Search（实时智能搜索优化）
+        # 7. 台股财经 RSS（免 key 的繁中财经源，对台股个股/大盘最具针对性；
+        #    非台股查询会自动跳过，单一 feed 失败不影响主流程）
+        tw_rss_provider = TaiwanRSSSearchProvider(
+            tw_rss_feed_urls,
+            enabled=bool(tw_rss_enabled),
+        )
+        if tw_rss_provider.is_available:
+            self._providers.append(tw_rss_provider)
+            logger.info("已启用台股 RSS 新闻源，共 %s 个 feed", len(tw_rss_provider.feed_urls))
+
+        # 8. Anspire Search（实时智能搜索优化）
         if anspire_keys:
             self._providers.insert(0, AnspireSearchProvider(anspire_keys))
             logger.info(f"已配置 Anspire Search 搜索，共 {len(anspire_keys)} 个 API Key")
@@ -3959,6 +4241,8 @@ def get_search_service() -> SearchService:
                     minimax_keys=config.minimax_api_keys,
                     searxng_base_urls=config.searxng_base_urls,
                     searxng_public_instances_enabled=config.searxng_public_instances_enabled,
+                    tw_rss_enabled=getattr(config, "tw_rss_news_enabled", True),
+                    tw_rss_feed_urls=getattr(config, "tw_rss_feed_urls", None),
                     news_max_age_days=config.news_max_age_days,
                     news_strategy_profile=getattr(config, "news_strategy_profile", "short"),
                 )

@@ -719,6 +719,8 @@ class Config:
     serpapi_keys: List[str] = field(default_factory=list)  # SerpAPI Keys
     searxng_base_urls: List[str] = field(default_factory=list)  # SearXNG instance URLs (self-hosted, no quota)
     searxng_public_instances_enabled: bool = True  # Auto-discover public SearXNG instances when base URLs are absent
+    tw_rss_news_enabled: bool = True  # Taiwan finance RSS news source (free, no API key)
+    tw_rss_feed_urls: List[str] = field(default_factory=list)  # Override Taiwan RSS feeds (empty = built-in defaults)
 
     # === Social Sentiment (US stocks only, api.adanos.org) ===
     social_sentiment_api_key: Optional[str] = None
@@ -1377,6 +1379,28 @@ class Config:
             default=True,
         )
 
+        # 台股财经 RSS 新闻源（免 key）：默认启用，可关闭或自定义 feed 列表
+        tw_rss_news_enabled = parse_env_bool(
+            os.getenv('TW_RSS_NEWS_ENABLED'),
+            default=True,
+        )
+        _raw_tw_rss_urls = [
+            u.strip() for u in os.getenv('TW_RSS_FEED_URLS', '').split(',') if u.strip()
+        ]
+        tw_rss_feed_urls = []
+        invalid_tw_rss_urls = []
+        for u in _raw_tw_rss_urls:
+            p = urlparse(u)
+            if p.scheme in ('http', 'https') and p.netloc:
+                tw_rss_feed_urls.append(u)
+            else:
+                invalid_tw_rss_urls.append(u)
+        if invalid_tw_rss_urls:
+            logger.warning(
+                "TW_RSS_FEED_URLS 中存在无效 URL，已忽略: %s",
+                ", ".join(invalid_tw_rss_urls[:3]),
+            )
+
         # 企微消息类型与最大字节数逻辑
         wechat_msg_type = os.getenv('WECHAT_MSG_TYPE', 'markdown')
         wechat_msg_type_lower = wechat_msg_type.lower()
@@ -1517,6 +1541,8 @@ class Config:
             serpapi_keys=serpapi_keys,
             searxng_base_urls=searxng_base_urls,
             searxng_public_instances_enabled=searxng_public_instances_enabled,
+            tw_rss_news_enabled=tw_rss_news_enabled,
+            tw_rss_feed_urls=tw_rss_feed_urls,
             social_sentiment_api_key=os.getenv('SOCIAL_SENTIMENT_API_KEY') or None,
             social_sentiment_api_url=os.getenv('SOCIAL_SENTIMENT_API_URL', 'https://api.adanos.org').rstrip('/'),
             news_max_age_days=parse_env_int(os.getenv('NEWS_MAX_AGE_DAYS'), 3, field_name='NEWS_MAX_AGE_DAYS', minimum=1),
@@ -2365,8 +2391,12 @@ class Config:
         """Whether SearXNG fallback is enabled via self-hosted or public mode."""
         return bool(self.searxng_base_urls) or bool(self.searxng_public_instances_enabled)
 
+    def has_tw_rss_enabled(self) -> bool:
+        """Whether the free Taiwan finance RSS news source is enabled."""
+        return bool(self.tw_rss_news_enabled)
+
     def has_search_capability_enabled(self) -> bool:
-        """Whether any search provider is configured or SearXNG fallback is enabled."""
+        """Whether any search provider is configured or a keyless fallback is enabled."""
         return bool(
             self.anspire_api_keys
             or self.bocha_api_keys
@@ -2375,6 +2405,7 @@ class Config:
             or self.brave_api_keys
             or self.serpapi_keys
             or self.has_searxng_enabled()
+            or self.has_tw_rss_enabled()
         )
 
     def is_agent_available(self) -> bool:

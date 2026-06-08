@@ -70,6 +70,8 @@ def build_market_review_runtime(
                 "searxng_public_instances_enabled",
                 True,
             ),
+            tw_rss_enabled=getattr(config, "tw_rss_news_enabled", True),
+            tw_rss_feed_urls=getattr(config, "tw_rss_feed_urls", None),
             news_max_age_days=getattr(config, "news_max_age_days", 3),
             news_strategy_profile=getattr(config, "news_strategy_profile", "short"),
         )
