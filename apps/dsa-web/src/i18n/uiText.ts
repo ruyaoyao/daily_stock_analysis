@@ -915,7 +915,7 @@ const zhHant: Record<UiTextKey, string> = {
   'home.marketReviewUnknownStatus': '大盤覆盤狀態異常',
   'home.notify': '推送通知',
   'home.pageTitle': '每日選股分析 - DSA',
-  'home.placeholder': '輸入股票代碼或名稱，如 600519、貴州茅台、AAPL',
+  'home.placeholder': '輸入股票代碼或名稱，如 0050、00878、AAPL',
   'home.progressActive': '進行中',
   'home.reanalyze': '重新分析',
   'home.rerunMarketReview': '重新覆盤',

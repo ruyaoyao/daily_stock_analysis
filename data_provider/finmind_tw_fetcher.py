@@ -61,7 +61,7 @@ class FinMindTwFetcher(BaseFetcher):
 
         current_price, avg_cost = self._fetch_price_stats(bare_code)
         if current_price <= 0 or avg_cost <= 0:
-            logger.warning("[FinMindTwFetcher] %s 缺少有效价格，无法计算筹码成本", bare_code)
+            logger.warning("[FinMindTwFetcher] %s 缺少有效價格，無法計算籌碼成本", bare_code)
             return None
 
         metrics = compute_chip_metrics_from_tiers(
@@ -95,7 +95,7 @@ class FinMindTwFetcher(BaseFetcher):
             concentration_70=concentration_70,
         )
         logger.info(
-            "[筹码分布] TW%s 日期=%s: 获利比例=%.1f%%, 平均成本=%.2f, 90%%集中度=%.1f%%, 来源=%s",
+            "[籌碼分布] TW%s 日期=%s: 獲利比例=%.1f%%, 平均成本=%.2f, 90%%集中度=%.1f%%, 來源=%s",
             bare_code,
             chip.date,
             chip.profit_ratio * 100,
@@ -130,7 +130,7 @@ class FinMindTwFetcher(BaseFetcher):
             response.raise_for_status()
             payload = response.json()
         except Exception as exc:
-            logger.info("[FinMindTwFetcher] FinMind 价格查询失败 %s: %s", bare_code, exc)
+            logger.info("[FinMindTwFetcher] FinMind 價格查詢失敗 %s: %s", bare_code, exc)
             return None
 
         rows = payload.get("data") or []
@@ -164,14 +164,14 @@ class FinMindTwFetcher(BaseFetcher):
         try:
             import yfinance as yf
         except ImportError:
-            logger.warning("[FinMindTwFetcher] 未安装 yfinance，无法估算台股筹码成本")
+            logger.warning("[FinMindTwFetcher] 未安裝 yfinance，無法估算台股籌碼成本")
             return 0.0, 0.0
 
         symbol = f"{bare_code}.TW"
         try:
             history = yf.Ticker(symbol).history(period="3mo")
         except Exception as exc:
-            logger.info("[FinMindTwFetcher] yfinance 查询失败 %s: %s", symbol, exc)
+            logger.info("[FinMindTwFetcher] yfinance 查詢失敗 %s: %s", symbol, exc)
             return 0.0, 0.0
 
         if history is None or history.empty:
