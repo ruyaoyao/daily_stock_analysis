@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 台股大盘复盘（`MARKET_REVIEW_REGION=tw`）报「大盘复盘未返回可持久化报告」：`MarketLightSnapshot.region` 仅允许 `cn/hk/us`，构建 `region='tw'` 快照时 Pydantic 校验失败导致复盘中断；`MarketRegion` 增加 `tw`，台股复盘可正常生成并持久化（市场红绿灯告警仍维持 cn/hk/us）。
 - [改进] 台股即时报价补齐 `volume_ratio`（直接取自 Shioaji 快照）与 `amplitude`（由当日高/低与昨收推导），使台股实时/趋势上下文与 A 股口径对齐（`pipeline` 读取 `quote.volume_ratio`）。
 - [修复] 技术告警「当日是否为已收盘 bar」判定改为按标的所属市场的本地收盘时间与时区计算（台股 13:30 台北、A 股 15:00、港股/美股 16:00），修复服务器时区非市场时区时台股技术告警误纳/误删当日未收盘 bar 的问题；未知市场仍保留 16:00 默认行为。
 - [改进] TaiwanRSS 台股新闻整合四套来源：宏观 RSS（Yahoo/中央社/鉅亨）+ Yahoo 个股 RSS + Google News RSS + FinMind `TaiwanStockNews`；新增 `TW_RSS_GOOGLE_NEWS_ENABLED` / `TW_RSS_FINMIND_NEWS_ENABLED` 开关。
