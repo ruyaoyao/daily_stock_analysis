@@ -2,6 +2,7 @@ import type React from 'react';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { formatUiText, UI_TEXT, type UiLanguage, type UiTextKey, type UiTextParams } from '../i18n/uiText';
 import { getRuntimeInitialLanguage, getUiLanguageStorage, persistUiLanguage } from '../utils/uiLanguage';
+import { startHantDom, stopHantDom, toHant } from '../utils/zhHant';
 
 type UiLanguageContextValue = {
   language: UiLanguage;
@@ -32,10 +33,27 @@ export const UiLanguageProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   }, [language]);
 
+  // zh-Hant: convert the whole document (hardcoded literals + backend text that
+  // never goes through t()) to Traditional, and keep newly-rendered DOM converted.
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    if (language === 'zh-Hant') {
+      startHantDom();
+      return () => stopHantDom();
+    }
+    stopHantDom();
+    return undefined;
+  }, [language]);
+
   const value = useMemo<UiLanguageContextValue>(() => ({
     language,
     setLanguage,
-    t: (key, params) => formatUiText(UI_TEXT[language][key], params),
+    // For zh-Hant also run locale strings through OpenCC so any entry that
+    // still carries Simplified text is normalized to Traditional.
+    t: (key, params) => {
+      const text = formatUiText(UI_TEXT[language][key], params);
+      return language === 'zh-Hant' ? toHant(text) : text;
+    },
   }), [language, setLanguage]);
 
   return (
