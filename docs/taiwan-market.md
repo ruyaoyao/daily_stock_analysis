@@ -114,7 +114,7 @@ pip install shioaji          # 已加入 requirements.txt
 
 以下能力在台股**暂不支持**，调用时优雅降级（返回 `None` / 空），不会抛异常中断整体流程：
 
-- **筹码分布**（A 股 `ChipDistribution`）：台股无对应免密钥来源，返回 `None` 并记录 warning。
+- **筹码分布**（A 股 `ChipDistribution`）：台股经 TDCC 股權分散表（Open Data）映射大户集中度，并结合 FinMind（可选 `FINMIND_TOKEN`）或 yfinance 估算 VWAP 作为平均成本；Akshare `stock_cyq_em` 不会用于台股代码。
 - **板块 / 概念涨跌榜、市场涨跌家数（breadth）**：台股大盘复盘的 `has_market_stats` / `has_sector_rankings` 为 `False`，仅做指数级复盘。
 - **三大法人 / 融资融券尚未接入个股 LLM 分析层**：数据方法（`ShioajiTwFetcher.get_institutional_investors` / `get_margin_balance`）已可用并有单测覆盖，但暂未注入个股分析报告（保持与现有分析层契约一致，避免越界改动）。
 - **兴柜股票、期货 / 选择权**：不支持。

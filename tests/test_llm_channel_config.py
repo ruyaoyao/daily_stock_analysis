@@ -764,5 +764,32 @@ class LLMChannelConfigTestCase(unittest.TestCase):
         )
 
 
+class GeminiKeyParsingTestCase(unittest.TestCase):
+    """GEMINI_API_KEY must comma-split for multi-key rotation/failover."""
+
+    @patch("src.config.setup_env")
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_single_gemini_key(self, _yaml, _env) -> None:
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "key-solo"}, clear=True):
+            config = Config._load_from_env()
+        self.assertEqual(config.gemini_api_keys, ["key-solo"])
+
+    @patch("src.config.setup_env")
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_comma_separated_gemini_key_splits(self, _yaml, _env) -> None:
+        # Regression: GEMINI_API_KEY=key1,key2 must yield two keys, not one
+        # joined blob (which Google rejects as an invalid credential).
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "key1, key2 ,key3"}, clear=True):
+            config = Config._load_from_env()
+        self.assertEqual(config.gemini_api_keys, ["key1", "key2", "key3"])
+
+    @patch("src.config.setup_env")
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_plural_var_takes_priority(self, _yaml, _env) -> None:
+        with patch.dict(os.environ, {"GEMINI_API_KEYS": "p1,p2", "GEMINI_API_KEY": "single"}, clear=True):
+            config = Config._load_from_env()
+        self.assertEqual(config.gemini_api_keys, ["p1", "p2"])
+
+
 if __name__ == "__main__":
     unittest.main()

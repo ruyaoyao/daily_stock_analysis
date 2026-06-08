@@ -40,6 +40,7 @@ from src.config import (
 )
 from src.llm.generation_params import apply_litellm_generation_params
 from src.llm.errors import call_litellm_with_param_recovery
+from src.llm.native_gemini import native_gemini_completion, should_use_native_gemini
 from src.storage import persist_llm_usage
 from src.data.stock_mapping import STOCK_NAME_MAP
 from src.report_language import (
@@ -2259,8 +2260,15 @@ class GeminiAnalyzer:
             )
 
     def is_available(self) -> bool:
-        """Check if LiteLLM is properly configured with at least one API key."""
-        return self._router is not None or self._litellm_available
+        """Check if an LLM backend is configured with at least one API key."""
+        if self._router is not None or self._litellm_available:
+            return True
+        # Native Gemini can run even if the LiteLLM router/import is unavailable.
+        config = self._get_runtime_config()
+        return bool(
+            getattr(config, "native_gemini_enabled", False)
+            and getattr(config, "gemini_api_keys", None)
+        )
 
     def _dispatch_litellm_completion(
         self,
@@ -2272,6 +2280,12 @@ class GeminiAnalyzer:
         router_model_names: set[str],
     ) -> Any:
         """Dispatch a LiteLLM completion through router or direct fallback."""
+        # Opt-in native Gemini path: authenticate with the x-goog-api-key header
+        # (instead of LiteLLM's ?key= query param) plus multi-key rotation/retry.
+        # Returns a LiteLLM-shaped payload consumed unchanged by the orchestrator.
+        if should_use_native_gemini(model, config):
+            return native_gemini_completion(model, call_kwargs, config=config)
+
         wire_models = resolve_fallback_litellm_wire_models(model, config.llm_model_list)
         register_fallback_model_pricing(wire_models)
         effective_kwargs = dict(call_kwargs)

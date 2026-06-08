@@ -641,6 +641,8 @@ class Config:
     shioaji_ca_path: Optional[str] = None
     shioaji_ca_password: Optional[str] = None
     shioaji_simulation: bool = False
+    # === 台股 FinMind（可选，用于台股筹码分布价格统计；TDCC 股權分散表无需 Token）===
+    finmind_token: Optional[str] = None
     # === 市场总开关（默认全开；关闭后该市场个股不抓取/不分析，且不纳入大盘复盘）===
     market_cn_enabled: bool = True
     market_hk_enabled: bool = True
@@ -689,6 +691,11 @@ class Config:
     gemini_request_delay: float = 2.0  # 请求间隔（秒）
     gemini_max_retries: int = 5  # 最大重试次数
     gemini_retry_delay: float = 5.0  # 重试基础延时（秒）
+
+    # Native Gemini path: use the x-goog-api-key header (not LiteLLM's ?key= query
+    # param) for Google AI Studio, with multi-key rotation + retry. Opt-in.
+    native_gemini_enabled: bool = False
+    native_gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/models"
 
     # Anthropic Claude API（备选，当 Gemini 不可用时使用）
     anthropic_api_key: Optional[str] = None
@@ -1149,12 +1156,16 @@ class Config:
         ]
         
         # === LiteLLM multi-key parsing ===
-        # GEMINI_API_KEYS (comma-separated) > GEMINI_API_KEY (single)
+        # GEMINI_API_KEYS (comma-separated) > GEMINI_API_KEY (single OR comma-separated).
+        # GEMINI_API_KEY is also comma-split so that GEMINI_API_KEY=key1,key2 yields two
+        # keys for rotation/failover (API keys never contain commas). This matches the
+        # documented "多 Key 负载均衡" comment and avoids sending a joined blob as one
+        # invalid credential.
         _gemini_keys_raw = os.getenv('GEMINI_API_KEYS', '')
         gemini_api_keys = [k.strip() for k in _gemini_keys_raw.split(',') if k.strip()]
         _single_gemini = os.getenv('GEMINI_API_KEY', '').strip()
         if not gemini_api_keys and _single_gemini:
-            gemini_api_keys = [_single_gemini]
+            gemini_api_keys = [k.strip() for k in _single_gemini.split(',') if k.strip()]
 
         # ANTHROPIC_API_KEYS > ANTHROPIC_API_KEY
         _anthropic_keys_raw = os.getenv('ANTHROPIC_API_KEYS', '')
@@ -1484,6 +1495,7 @@ class Config:
                 os.getenv('SHIOAJI_SIMULATION'),
                 default=False,
             ),
+            finmind_token=os.getenv('FINMIND_TOKEN') or None,
             market_cn_enabled=parse_env_bool(os.getenv('MARKET_CN_ENABLED'), default=True),
             market_hk_enabled=parse_env_bool(os.getenv('MARKET_HK_ENABLED'), default=True),
             market_us_enabled=parse_env_bool(os.getenv('MARKET_US_ENABLED'), default=True),
@@ -1511,6 +1523,11 @@ class Config:
             gemini_request_delay=parse_env_float(os.getenv('GEMINI_REQUEST_DELAY'), 2.0, field_name='GEMINI_REQUEST_DELAY', minimum=0.0),
             gemini_max_retries=parse_env_int(os.getenv('GEMINI_MAX_RETRIES'), 5, field_name='GEMINI_MAX_RETRIES', minimum=0),
             gemini_retry_delay=parse_env_float(os.getenv('GEMINI_RETRY_DELAY'), 5.0, field_name='GEMINI_RETRY_DELAY', minimum=0.0),
+            native_gemini_enabled=parse_env_bool(os.getenv('NATIVE_GEMINI_ENABLED'), default=False),
+            native_gemini_base_url=(
+                os.getenv('NATIVE_GEMINI_BASE_URL', '').strip()
+                or "https://generativelanguage.googleapis.com/v1beta/models"
+            ),
             anthropic_api_key=os.getenv('ANTHROPIC_API_KEY'),
             anthropic_model=os.getenv('ANTHROPIC_MODEL', 'claude-sonnet-4-6'),
             anthropic_temperature=parse_env_float(os.getenv('ANTHROPIC_TEMPERATURE'), 0.7, field_name='ANTHROPIC_TEMPERATURE'),

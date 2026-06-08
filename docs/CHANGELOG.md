@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] 台股筹码分布：新增 `FinMindTwFetcher`，以 TDCC 集保戶股權分散表（免 Token）计算大户集中度，并结合 FinMind（`FINMIND_TOKEN`）或 yfinance 估算平均成本/获利比例；台股不再调用 Akshare `stock_cyq_em`。
 - [新功能] 新增各市场总开关 `MARKET_CN_ENABLED` / `MARKET_HK_ENABLED` / `MARKET_US_ENABLED` / `MARKET_TW_ENABLED`（默认全开）：可独立关闭某市场（如 A 股），关闭后该市场个股不抓取/不分析，且不纳入大盘复盘；不配置则维持现有行为。Settings 提供对应开关。
 - [新功能] Web UI 新增繁體中文（zh-Hant，台灣用語）介面語言，與既有简体/English 並列，可在語言切換鈕循環選擇（简→繁→EN），偏好持久化於 `dsa.uiLanguage`。
 - [新功能] 分析报告/通知新增繁体中文输出：`REPORT_LANGUAGE=zh-Hant`（或 zh-TW）时，结构化标签与枚举使用繁体，报告正文在输出边界经 opencc（s2twp）统一转为台湾繁体；未安装 opencc 时优雅降级保持简体，不中断流程。
@@ -25,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [新功能] 持仓管理支持台股：后端 `VALID_MARKETS` 增加 `tw`、默认计价币种 `tw→TWD`，API `PortfolioAccount/Trade/CorporateAction` 的 `market` 枚举增加 `tw`；前端持仓类型与新建账户下拉新增台股（FX 仍按已有“按币种汇率表”机制，需自行维护 TWD→CNY 汇率，与港股/美股一致）。
 - [新功能] 设置页「大盘复盘市场」下拉新增台股（tw）选项标签（zh/zh-Hant/en），后端早已支持 `MARKET_REVIEW_REGION=tw`，此前仅前端缺少可选项标签。
 - [修复] 个股代码校验支持台股：前端 `validateStockCode` 与后端 `stock_code_utils` / `stocks.py` 校验新增 `TW####`（4-6 位）及 `.TW`/`.TWO` 格式，修复输入 `tw0050` 等台股代码被「请输入有效的股票代码」拦截、无法触发分析的问题；裸 4 位数字仍不视为合法代码以避免与 A 股/港股歧义。
+- [新功能] 新增可选的原生 Gemini 直连（`NATIVE_GEMINI_ENABLED`，默认关闭）：用 `x-goog-api-key` 请求头鉴权（而非 LiteLLM `gemini/` 默认的 `?key=` 查询参数），自带多 Key 轮替与重试退避，并可经 `NATIVE_GEMINI_BASE_URL` 指向自建 Gemini 兼容网关；开启后仅接管 `gemini/` 模型，其它供应商仍走 LiteLLM，返回体与 LiteLLM 同构、不影响后续解析与模型 fallback。做法参考 quant-trading 的 SDK-free Gemini 客户端。
+- [修复] `GEMINI_API_KEY` 现按逗号拆分多把 Key（与「多 Key 负载均衡」注释及 `GEMINI_API_KEYS` 行为一致），修复 `GEMINI_API_KEY=key1,key2` 被当作单一拼接凭证发送导致 401 的问题；API Key 不含逗号，拆分安全，支持轮替/故障转移。
 - [新功能] 大盘复盘新增台股区域：`MARKET_REVIEW_REGION=tw` 复盘加权指数（^TWII）与柜买指数（^TWOII，经 yfinance）；`both` 仍仅含 cn+hk+us。
 - [改进] 交易日历新增台股（exchange-calendars `XTAI`，时区 Asia/Taipei），按市场过滤当日开市股票时纳入台股。
 - [修复] Web 英文界面补齐回测、组合风险与告警规则相关文案本地化，避免英文模式下残留中文筛选器、按钮和枚举标签。
