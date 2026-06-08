@@ -265,6 +265,13 @@ class ShioajiTwFetcher(BaseFetcher):
         if close is not None and change_amount is not None:
             pre_close = round(close - change_amount, 4)
 
+        high = _to_float(getattr(snap, "high", None))
+        low = _to_float(getattr(snap, "low", None))
+        # Amplitude (%) = (high - low) / prev_close * 100, when all available.
+        amplitude = None
+        if high is not None and low is not None and pre_close not in (None, 0):
+            amplitude = round((high - low) / pre_close * 100, 4)
+
         quote = UnifiedRealtimeQuote(
             code=f"TW{bare}",
             name=str(getattr(contract, "name", "") or ""),
@@ -275,9 +282,13 @@ class ShioajiTwFetcher(BaseFetcher):
             volume=_to_int(getattr(snap, "total_volume", None)),
             amount=_to_float(getattr(snap, "total_amount", None)),
             open_price=_to_float(getattr(snap, "open", None)),
-            high=_to_float(getattr(snap, "high", None)),
-            low=_to_float(getattr(snap, "low", None)),
+            high=high,
+            low=low,
             pre_close=pre_close,
+            # Shioaji snapshot already carries volume_ratio; surface it for the
+            # realtime/trend context (pipeline reads quote.volume_ratio).
+            volume_ratio=_to_float(getattr(snap, "volume_ratio", None)),
+            amplitude=amplitude,
         )
         return quote if quote.has_basic_data() else None
 

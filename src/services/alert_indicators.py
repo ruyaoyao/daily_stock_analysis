@@ -10,6 +10,8 @@ from typing import Any, Dict, Optional
 
 import pandas as pd
 
+from src.core.trading_calendar import get_market_for_stock, get_market_now
+
 
 TECHNICAL_ALERT_TYPES = frozenset({
     "ma_price_cross",
@@ -128,7 +130,8 @@ def evaluate_indicator_alert(
         columns = ("high", "low", "close")
 
     try:
-        normalized = normalize_ohlcv(df, required_columns=columns, now=now)
+        market = get_market_for_stock(stock_code)
+        normalized = normalize_ohlcv(df, required_columns=columns, now=now, market=market)
     except ValueError as exc:
         return IndicatorEvaluation(
             status="degraded",
@@ -180,6 +183,7 @@ def normalize_ohlcv(
     *,
     required_columns: tuple[str, ...],
     now: Optional[datetime] = None,
+    market: Optional[str] = None,
 ) -> pd.DataFrame:
     if df is None or getattr(df, "empty", True):
         return pd.DataFrame()
@@ -203,7 +207,7 @@ def normalize_ohlcv(
     output = output.dropna(subset=list(required_columns)).copy()
     if output.empty:
         return output
-    output = _drop_partial_today(output, now=now)
+    output = _drop_partial_today(output, now=now, market=market)
     if output.empty:
         return output.reset_index(drop=True)
     output = output.sort_values(by="date", kind="stable", na_position="first").reset_index(drop=True)
@@ -485,9 +489,24 @@ def _date_series(df: pd.DataFrame) -> pd.Series:
     return pd.Series([pd.NaT] * len(df), index=df.index)
 
 
-def _drop_partial_today(df: pd.DataFrame, *, now: Optional[datetime] = None) -> pd.DataFrame:
-    current = now or datetime.now()
-    if current.time() >= time(16, 0):
+# Local market close times (used to decide whether "today" is a closed bar).
+# Default 16:00 preserves prior behavior for unknown/None markets.
+_MARKET_CLOSE_TIME = {
+    "cn": time(15, 0),
+    "hk": time(16, 0),
+    "us": time(16, 0),
+    "tw": time(13, 30),  # TWSE/TPEx close 13:30 Asia/Taipei
+}
+
+
+def _drop_partial_today(
+    df: pd.DataFrame, *, now: Optional[datetime] = None, market: Optional[str] = None
+) -> pd.DataFrame:
+    # Evaluate "now" in the stock's market timezone so the partial-bar decision
+    # is correct regardless of server timezone (e.g. TW closes 13:30 Taipei).
+    current = get_market_now(market, now) if market else (now or datetime.now())
+    close_time = _MARKET_CLOSE_TIME.get(market or "", time(16, 0))
+    if current.time() >= close_time:
         return df
     try:
         parsed = pd.to_datetime(df["date"].iloc[-1], errors="coerce")

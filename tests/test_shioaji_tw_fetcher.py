@@ -96,6 +96,7 @@ def test_get_realtime_quote_maps_snapshot_fields():
         open=575.0,
         high=582.0,
         low=574.0,
+        volume_ratio=1.85,
     )
     fetcher = ShioajiTwFetcher()
     fetcher._session = _FakeSession(contract=_FakeContract(), api=_FakeApi(snap))
@@ -111,6 +112,9 @@ def test_get_realtime_quote_maps_snapshot_fields():
     assert quote.pre_close == 575.0
     assert quote.volume == 30000
     assert quote.open_price == 575.0
+    # P1: volume_ratio surfaced from snapshot; amplitude derived (high-low)/pre_close*100.
+    assert quote.volume_ratio == 1.85
+    assert quote.amplitude == round((582.0 - 574.0) / 575.0 * 100, 4)
 
 
 def test_get_realtime_quote_returns_none_when_no_contract():

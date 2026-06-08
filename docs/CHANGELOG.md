@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] 台股即时报价补齐 `volume_ratio`（直接取自 Shioaji 快照）与 `amplitude`（由当日高/低与昨收推导），使台股实时/趋势上下文与 A 股口径对齐（`pipeline` 读取 `quote.volume_ratio`）。
+- [修复] 技术告警「当日是否为已收盘 bar」判定改为按标的所属市场的本地收盘时间与时区计算（台股 13:30 台北、A 股 15:00、港股/美股 16:00），修复服务器时区非市场时区时台股技术告警误纳/误删当日未收盘 bar 的问题；未知市场仍保留 16:00 默认行为。
+- [改进] TaiwanRSS 台股新闻整合四套来源：宏观 RSS（Yahoo/中央社/鉅亨）+ Yahoo 个股 RSS + Google News RSS + FinMind `TaiwanStockNews`；新增 `TW_RSS_GOOGLE_NEWS_ENABLED` / `TW_RSS_FINMIND_NEWS_ENABLED` 开关。
+- [改进] TaiwanRSS 在查询含台股代码时追加 Yahoo 个股 RSS（`tw.stock.yahoo.com/rss?s=`），修复联电/元大高股息等个股在宏观 RSS 中常搜不到新闻的问题。
+- [新功能] 繁体（zh-Hant）UI 现经 OpenCC（cn→twp，等同 s2twp）在运行时整页转换：`t()` 文案 + 全局 DOM 观察器将所有中文（含未走 i18n 的硬编码文案、后端下发文案、`placeholder`/`aria-label`/`title` 属性）转为台湾正体；保护 `<input>`/`<textarea>`/`<code>` 内容与 `data-no-hant` 标记，并将「代码」修正为「代碼」。新增前端依赖 `opencc-js`。
+- [新功能] 个股搜索支持拉取 TWSE 全部上市证券：`python scripts/generate_index_from_csv.py --merge-tw-listed` 合并约 1300+ 档（含 ETF，如 `tw2344` 华邦电）到 `stocks.index.json`；`--merge-tw` 仍保留精选 CSV 模式。
 - [新功能] 台股筹码分布：新增 `FinMindTwFetcher`，以 TDCC 集保戶股權分散表（免 Token）计算大户集中度，并结合 FinMind（`FINMIND_TOKEN`）或 yfinance 估算平均成本/获利比例；台股不再调用 Akshare `stock_cyq_em`。
 - [新功能] 新增各市场总开关 `MARKET_CN_ENABLED` / `MARKET_HK_ENABLED` / `MARKET_US_ENABLED` / `MARKET_TW_ENABLED`（默认全开）：可独立关闭某市场（如 A 股），关闭后该市场个股不抓取/不分析，且不纳入大盘复盘；不配置则维持现有行为。Settings 提供对应开关。
 - [新功能] Web UI 新增繁體中文（zh-Hant，台灣用語）介面語言，與既有简体/English 並列，可在語言切換鈕循環選擇（简→繁→EN），偏好持久化於 `dsa.uiLanguage`。
