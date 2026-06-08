@@ -165,7 +165,7 @@ HK_BLUEPRINT = MarketStrategyBlueprint(
 
 TW_BLUEPRINT = MarketStrategyBlueprint(
     region="tw",
-    title="台股市場三段式復盤策略",
+    title="台股市場三段式覆盤策略",
     positioning="聚焦加權指數趨勢、三大法人籌碼動向與類股輪動，形成次日交易計畫。",
     principles=[
         "先看加權／櫃買指數方向，再看三大法人買賣超，最後看類股持續性。",

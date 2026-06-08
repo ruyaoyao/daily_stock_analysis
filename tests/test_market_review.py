@@ -209,8 +209,8 @@ class MarketReviewLocalizationTestCase(unittest.TestCase):
                 notifier, send_notification=False, override_region="cn,us"
             )
 
-        self.assertIn("# A股大盘复盘\n\nCN body", result)
-        self.assertIn("# 美股大盘复盘\n\nUS body", result)
+        self.assertIn("# A股大盤覆盤\n\nCN body", result)
+        self.assertIn("# 美股大盤覆盤\n\nUS body", result)
         self.assertNotIn("港股", result)
         self.assertNotIn("HK", result)
 
@@ -242,8 +242,8 @@ class MarketReviewLocalizationTestCase(unittest.TestCase):
                 notifier, send_notification=False, override_region="cn,hk"
             )
 
-        self.assertIn("# A股大盘复盘\n\nCN body", result)
-        self.assertIn("# 港股大盘复盘\n\nHK body", result)
+        self.assertIn("# A股大盤覆盤\n\nCN body", result)
+        self.assertIn("# 港股大盤覆盤\n\nHK body", result)
         self.assertNotIn("美股", result)
         self.assertNotIn("US Market", result)
 
@@ -345,20 +345,20 @@ class MarketReviewLocalizationTestCase(unittest.TestCase):
     def test_render_market_review_payload_markdown_does_not_repeat_title(self) -> None:
         markdown = market_review_module._render_market_review_payload_markdown(
             {
-                "title": "2026-06-03 大盘复盘",
+                "title": "2026-06-03 大盤覆盤",
                 "sections": [
                     {
                         "key": "daily_review",
-                        "title": "2026-06-03 大盘复盘",
-                        "markdown": "> 今日指数强弱分化。\n\n### 一、盘面总览\n正文",
+                        "title": "2026-06-03 大盤覆盤",
+                        "markdown": "> 今日指數強弱分化。\n\n### 一、盤面總覽\n正文",
                     }
                 ],
             },
-            wrapper_title="🎯 大盘复盘",
+            wrapper_title="🎯 大盤覆盤",
         )
 
-        self.assertEqual(markdown.count("2026-06-03 大盘复盘"), 1)
-        self.assertTrue(markdown.startswith("🎯 大盘复盘\n\n## 2026-06-03 大盘复盘"))
+        self.assertEqual(markdown.count("2026-06-03 大盤覆盤"), 1)
+        self.assertTrue(markdown.startswith("🎯 大盤覆盤\n\n## 2026-06-03 大盤覆盤"))
 
     def test_persist_market_review_history_saves_markdown_report(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -368,8 +368,8 @@ class MarketReviewLocalizationTestCase(unittest.TestCase):
             DatabaseManager.reset_instance()
             try:
                 saved = market_review_module._persist_market_review_history(
-                    review_report="## 今日大盘\n\n复盘正文",
-                    markdown_report="# 🎯 大盘复盘\n\n## 今日大盘\n\n复盘正文",
+                    review_report="## 今日大盤\n\n覆盤正文",
+                    markdown_report="# 🎯 大盤覆盤\n\n## 今日大盤\n\n覆盤正文",
                     region="cn",
                     config=SimpleNamespace(report_language="zh"),
                     query_id="market-task-001",
@@ -395,7 +395,7 @@ class MarketReviewLocalizationTestCase(unittest.TestCase):
                         "version": 1,
                         "kind": "market_review",
                         "region": "cn",
-                        "sections": [{"title": "今日大盘", "markdown": "复盘正文"}],
+                        "sections": [{"title": "今日大盤", "markdown": "覆盤正文"}],
                     },
                 )
 
@@ -407,10 +407,10 @@ class MarketReviewLocalizationTestCase(unittest.TestCase):
                     ).first()
                     self.assertIsNotNone(row)
                     self.assertEqual(row.code, market_review_module.MARKET_REVIEW_HISTORY_CODE)
-                    self.assertEqual(row.name, "大盘复盘")
+                    self.assertEqual(row.name, "大盤覆盤")
                     self.assertEqual(row.report_type, market_review_module.MARKET_REVIEW_REPORT_TYPE)
-                    self.assertEqual(row.news_content, "## 今日大盘\n\n复盘正文")
-                    self.assertIn("# 🎯 大盘复盘", row.raw_result)
+                    self.assertEqual(row.news_content, "## 今日大盤\n\n覆盤正文")
+                    self.assertIn("# 🎯 大盤覆盤", row.raw_result)
                     self.assertIn('"market_light_snapshots"', row.context_snapshot)
                     self.assertIn('"market_review_payload"', row.context_snapshot)
                     self.assertIn('"trade_date": "2026-03-06"', row.context_snapshot)

@@ -1,7 +1,7 @@
-import type { BacktestPhaseFilter } from '../types/backtest';
-import type { AlertTargetScope, AlertType, MarketLightStatus, MarketRegion, PortfolioStopLossMode } from '../types/alerts';
-import type { PortfolioCashDirection, PortfolioCorporateActionType, PortfolioSide } from '../types/portfolio';
 import type { UiLanguage } from '../i18n/uiText';
+import type { AlertTargetScope, AlertType, MarketLightStatus, MarketRegion, PortfolioStopLossMode } from '../types/alerts';
+import type { BacktestPhaseFilter } from '../types/backtest';
+import type { PortfolioCashDirection, PortfolioCorporateActionType, PortfolioSide } from '../types/portfolio';
 
 type Option<T extends string = string> = { value: T; label: string };
 const alertTypes: AlertType[] = ['price_cross', 'price_change_percent', 'volume_spike', 'ma_price_cross', 'rsi_threshold', 'macd_cross', 'kdj_cross', 'cci_threshold', 'portfolio_stop_loss', 'portfolio_concentration', 'portfolio_drawdown', 'portfolio_price_stale', 'market_light_status', 'market_light_score_drop'];
