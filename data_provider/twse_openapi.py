@@ -827,3 +827,73 @@ def get_tw_otc_index() -> Optional[dict]:
         "amount": amount or 0.0,
         "amplitude": round(amplitude, 4),
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 全市场融资增加 Top N 排行（上市 TSE）— TWSE MI_MARGN（无需 Key）
+# 单位：张（1 张 = 1000 股）。融資增加 = 融資今日餘額 - 融資前日餘額。
+# ─────────────────────────────────────────────────────────────────────────────
+
+_MARGIN_RANKING_SORTS = {
+    "margin_increase": ("margin_change", False),   # 融资增加（默认）
+    "margin_decrease": ("margin_change", True),    # 融资减少
+    "short_increase": ("short_change", False),     # 融券增加
+}
+
+
+def get_tw_margin_ranking(top_n: int = 50, *, sort_by: str = "margin_increase") -> Optional[list]:
+    """上市（TSE）融资融券排行（默认按融資增加降序），取自 TWSE MI_MARGN。
+
+    一次取得全市场（含 融資/融券 昨餘/今餘），逐档计算当日增减与券资比；
+    sort_by ∈ {margin_increase, margin_decrease, short_increase}。失败返回 None。
+    单位：张。返回元素字段：stock_code/name/margin_balance/margin_prev/
+    margin_change/short_balance/short_prev/short_change/offset/
+    margin_usage_pct/short_margin_ratio。
+    """
+    rows = _get_json(_TSE_MARGN_OPENAPI_URL)
+    if not isinstance(rows, list) or not rows:
+        return None
+
+    out: list[dict] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        code = str(row.get("股票代號") or "").strip()
+        if not code:
+            continue
+        m_prev = _safe_int(row.get("融資前日餘額"))
+        m_today = _safe_int(row.get("融資今日餘額"))
+        s_prev = _safe_int(row.get("融券前日餘額"))
+        s_today = _safe_int(row.get("融券今日餘額"))
+        if m_today is None and s_today is None:
+            continue
+        m_change = (m_today - m_prev) if (m_today is not None and m_prev is not None) else None
+        s_change = (s_today - s_prev) if (s_today is not None and s_prev is not None) else None
+        m_limit = _safe_int(row.get("融資限額"))
+        usage = round(m_today / m_limit * 100, 2) if (m_today and m_limit and m_limit > 0) else None
+        ratio = round(s_today / m_today * 100, 2) if (s_today is not None and m_today) else None
+        out.append({
+            "stock_code": code,
+            "name": str(row.get("股票名稱") or "").strip(),
+            "margin_balance": m_today,
+            "margin_prev": m_prev,
+            "margin_change": m_change,
+            "short_balance": s_today,
+            "short_prev": s_prev,
+            "short_change": s_change,
+            "offset": _safe_int(row.get("資券互抵")),
+            "margin_usage_pct": usage,       # 融資使用率(%)
+            "short_margin_ratio": ratio,     # 券資比(%) = 融券今餘 / 融資今餘
+        })
+
+    field, _desc_neg = _MARGIN_RANKING_SORTS.get(sort_by, _MARGIN_RANKING_SORTS["margin_increase"])
+    negate = sort_by == "margin_decrease"
+
+    def _key(r: dict) -> float:
+        v = r.get(field)
+        if v is None:
+            return float("-inf")
+        return -v if negate else v
+
+    out.sort(key=_key, reverse=True)
+    return out[: max(1, top_n)]
