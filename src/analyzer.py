@@ -3151,7 +3151,11 @@ class GeminiAnalyzer:
 > {chip_unavailable_text}
 > {chip_instruction}
 """
-        
+
+        # 添加台股个股筹码流动（三大法人买卖超 + 融资融券；仅台股注入）
+        if isinstance(context, dict) and context.get('tw_chip_flow'):
+            prompt += self._build_tw_chip_flow_block(context['tw_chip_flow'], report_language)
+
         # 添加趋势分析结果（仅隐式内建 bull_trend 默认回退保留旧口径）
         if 'trend_analysis' in context:
             trend = _sanitize_trend_analysis_for_prompt(
@@ -3362,7 +3366,74 @@ class GeminiAnalyzer:
 """
         
         return prompt
-    
+
+    @staticmethod
+    def _build_tw_chip_flow_block(tw_chip_flow: dict, report_language: str) -> str:
+        """构建台股个股筹码流动区块（三大法人买卖超 + 融资融券，单位：张）。
+
+        三大法人净额：正=净买入、负=净卖出（即筹码流入/流出方向）；
+        融资余额=散户杠杆，融券余额=空方/避险。任一字段缺失则该行显示 N/A。
+        """
+        inst = (tw_chip_flow or {}).get("institutional") or {}
+        margin = (tw_chip_flow or {}).get("margin") or {}
+        if not inst and not margin:
+            return ""
+
+        def _signed(v) -> str:
+            return f"{int(v):+,}" if isinstance(v, (int, float)) else "N/A"
+
+        def _plain(v) -> str:
+            return f"{int(v):,}" if isinstance(v, (int, float)) else "N/A"
+
+        def _pct(v) -> str:
+            return f"{v}%" if isinstance(v, (int, float)) else "N/A"
+
+        def _chg_suffix(v, unit: str, en: bool) -> str:
+            if not isinstance(v, (int, float)):
+                return ""
+            return f" ({'Δ ' if en else '增减 '}{int(v):+,}{'' if en else unit})"
+
+        en = report_language == "en"
+        inst_date = inst.get("date")
+        margin_date = margin.get("date")
+
+        if en:
+            lines = ["", "### TW Chip Flow (Institutions / Margin)",
+                     "| Metric | Value | Decision meaning |", "|------|------|------|"]
+            if inst:
+                lines += [
+                    f"| 3 institutions net{f' ({inst_date})' if inst_date else ''} | {_signed(inst.get('total_net_lots'))} lots | + = net buy, - = net sell |",
+                    f"| - Foreign | {_signed(inst.get('foreign_net_lots'))} lots | |",
+                    f"| - Inv. trust | {_signed(inst.get('trust_net_lots'))} lots | |",
+                    f"| - Dealer | {_signed(inst.get('dealer_net_lots'))} lots | |",
+                ]
+            if margin:
+                lines += [
+                    f"| Margin balance{f' ({margin_date})' if margin_date else ''} | {_plain(margin.get('margin_balance_lots'))} lots{_chg_suffix(margin.get('margin_change_lots'),' lots',True)} | retail leverage; too high pressures rebounds |",
+                    f"| Short balance | {_plain(margin.get('short_balance_lots'))} lots{_chg_suffix(margin.get('short_change_lots'),' lots',True)} | shorts / hedging |",
+                    f"| Margin usage | {_pct(margin.get('margin_usage_pct'))} | |",
+                ]
+            lines.append("> Sustained institutional net buying with cool margin = constructive; net selling plus a margin spike warns of leverage unwind.")
+            return "\n".join(lines) + "\n"
+
+        lines = ["", "### 个股筹码流动（三大法人 / 融资融券）",
+                 "| 指标 | 数值 | 决策含义 |", "|------|------|----------|"]
+        if inst:
+            lines += [
+                f"| 三大法人合计买卖超{f'（{inst_date}）' if inst_date else ''} | {_signed(inst.get('total_net_lots'))} 张 | 正=法人净买入，负=净卖出 |",
+                f"| ├ 外资 | {_signed(inst.get('foreign_net_lots'))} 张 | |",
+                f"| ├ 投信 | {_signed(inst.get('trust_net_lots'))} 张 | |",
+                f"| └ 自营商 | {_signed(inst.get('dealer_net_lots'))} 张 | |",
+            ]
+        if margin:
+            lines += [
+                f"| 融资余额{f'（{margin_date}）' if margin_date else ''} | {_plain(margin.get('margin_balance_lots'))} 张{_chg_suffix(margin.get('margin_change_lots'),' 张',False)} | 散户杠杆，过高易回压 |",
+                f"| 融券余额 | {_plain(margin.get('short_balance_lots'))} 张{_chg_suffix(margin.get('short_change_lots'),' 张',False)} | 空方/避险力量 |",
+                f"| 融资使用率 | {_pct(margin.get('margin_usage_pct'))} | |",
+            ]
+        lines.append("> 法人持续净买入且融资未过热时偏多；法人净卖出叠加融资骤增需防杠杆回压。")
+        return "\n".join(lines) + "\n"
+
     def _format_volume(self, volume: Optional[float]) -> str:
         """格式化成交量显示"""
         if volume is None:

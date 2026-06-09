@@ -1548,6 +1548,29 @@ class DataFetcherManager:
         }
         return mapping.get(fetcher_name, fetcher_name.replace("Fetcher", "").lower())
 
+    def _enrich_tw_valuation(self, quote, stock_code: str) -> None:
+        """为台股实时快照补齐估值（PE/PB）。
+
+        Shioaji 快照不含本益比/股价净值比，导致个股分析「PE估值」判项数据缺失。
+        改以 TWSE BWIBBU_ALL（无需 Key）补齐；仅在对应字段缺失时填入，失败静默降级。
+        """
+        if quote is None:
+            return
+        if getattr(quote, "pe_ratio", None) is not None and getattr(quote, "pb_ratio", None) is not None:
+            return
+        try:
+            from data_provider.twse_openapi import get_tw_valuation
+            valuation = get_tw_valuation(stock_code)
+        except Exception as e:  # noqa: BLE001 - 估值补齐失败不应影响实时行情主链路
+            logger.debug("[实时行情] 台股 %s 估值补齐失败: %s", stock_code, e)
+            return
+        if not valuation:
+            return
+        if getattr(quote, "pe_ratio", None) is None and valuation.get("pe_ratio") is not None:
+            setattr(quote, "pe_ratio", valuation["pe_ratio"])
+        if getattr(quote, "pb_ratio", None) is None and valuation.get("pb_ratio") is not None:
+            setattr(quote, "pb_ratio", valuation["pb_ratio"])
+
     def _enrich_realtime_quote(
         self,
         quote,
@@ -1644,6 +1667,7 @@ class DataFetcherManager:
                     quote = None
             if quote is not None and quote.has_basic_data():
                 logger.info(f"[实时行情] 台股 {stock_code} 成功获取 (来源: ShioajiTwFetcher)")
+                self._enrich_tw_valuation(quote, stock_code)
                 return self._enrich_realtime_quote(
                     quote,
                     fallback_from=None,
@@ -3350,6 +3374,100 @@ class DataFetcherManager:
             return top, bottom
         logger.warning(f"[板块排行] 所有数据源均失败，最终错误: {last_error}")
         return [], []
+
+    def get_market_chip_stats(self, region: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """获取大盘层级筹码面统计（三大法人买卖超合计 + 融资融券余额）。
+
+        目前仅台股（region='tw'）经 TWSE RWD（无需 Key）提供；其余市场返回 None。
+        返回 {'institutional': {...}, 'margin': {...}}，任一子项可为 None（来源不可用时优雅降级）。
+        """
+        if (region or "").lower() != "tw":
+            return None
+        try:
+            from data_provider.twse_openapi import (
+                get_tw_institutional_total,
+                get_tw_margin_total,
+            )
+            institutional = get_tw_institutional_total()
+            margin = get_tw_margin_total()
+            if not institutional and not margin:
+                logger.warning("[TWSE OpenAPI] 获取台股大盘筹码统计为空")
+                return None
+            logger.info("[TWSE OpenAPI] 获取台股大盘筹码统计成功")
+            return {"institutional": institutional, "margin": margin}
+        except Exception as e:
+            logger.warning("[TWSE OpenAPI] 获取台股大盘筹码统计失败: %s", e)
+            return None
+
+    def get_tw_stock_chip_flow(self, stock_code: str) -> Optional[Dict[str, Any]]:
+        """台股个股筹码流动：三大法人买卖超（净，张）+ 融资融券余额（张）。
+
+        非台股返回 None。上市（TSE）经 TWSE OpenAPI（无需 Key）；上柜（OTC）TPEx
+        OpenAPI 在部分环境被重定向不可用，回退 FinMind（TaiwanStock* 数据集，需
+        FINMIND_TOKEN 时更稳）。任一子项缺失即留空，整体不可得时返回 None。
+        """
+        if not _is_tw_market(stock_code):
+            return None
+
+        institutional: Optional[Dict[str, Any]] = None
+        margin: Optional[Dict[str, Any]] = None
+
+        # 1) 上市优先走 TWSE OpenAPI（无需 Key、无频率限制）
+        try:
+            from data_provider.twse_openapi import (
+                get_institutional_investors,
+                get_margin_balance,
+            )
+            inst_raw = get_institutional_investors(stock_code)
+            if inst_raw:
+                institutional = {
+                    "date": inst_raw.get("date"),
+                    # 股 → 张（1 张 = 1000 股）
+                    "foreign_net_lots": self._shares_to_lots(inst_raw.get("foreign_net")),
+                    "trust_net_lots": self._shares_to_lots(inst_raw.get("trust_net")),
+                    "dealer_net_lots": self._shares_to_lots(inst_raw.get("dealer_net")),
+                    "total_net_lots": self._shares_to_lots(inst_raw.get("total_net")),
+                    "source": "twse_openapi",
+                }
+            margin_raw = get_margin_balance(stock_code)
+            if margin_raw:
+                margin = {
+                    "date": margin_raw.get("date"),
+                    "margin_balance_lots": margin_raw.get("margin_balance"),
+                    "margin_change_lots": None,  # openapi 单日端点不含前日余额
+                    "short_balance_lots": margin_raw.get("short_balance"),
+                    "short_change_lots": None,
+                    "margin_usage_pct": margin_raw.get("margin_usage_pct"),
+                    "source": "twse_openapi",
+                }
+        except Exception as e:
+            logger.warning("[TWSE OpenAPI] 获取台股个股筹码流动失败: %s", e)
+
+        # 2) 缺失部分（典型为上柜/OTC，TPEx OpenAPI 被重定向）回退 FinMind
+        if institutional is None or margin is None:
+            try:
+                fetcher = self._get_fetcher_by_name("FinMindTwFetcher")
+                if fetcher is not None:
+                    if institutional is None and hasattr(fetcher, "get_institutional_net"):
+                        institutional = fetcher.get_institutional_net(stock_code)
+                    if margin is None and hasattr(fetcher, "get_margin_flow"):
+                        margin = fetcher.get_margin_flow(stock_code)
+            except Exception as e:
+                logger.info("[FinMind] 台股个股筹码流动回退失败 %s: %s", stock_code, e)
+
+        if not institutional and not margin:
+            return None
+        return {"institutional": institutional, "margin": margin}
+
+    @staticmethod
+    def _shares_to_lots(shares: Optional[int]) -> Optional[int]:
+        """股 → 张（四舍五入；1 张 = 1000 股）。None 透传。"""
+        if shares is None:
+            return None
+        try:
+            return int(round(float(shares) / 1000.0))
+        except (TypeError, ValueError):
+            return None
 
     def get_concept_rankings(self, n: int = 5) -> Tuple[List[Dict], List[Dict]]:
         """获取概念/题材涨跌榜（自动切换数据源）。"""

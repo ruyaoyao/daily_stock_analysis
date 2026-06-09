@@ -124,6 +124,10 @@ class MarketOverview:
     top_sectors: List[Dict] = field(default_factory=list)     # 漲幅前5板塊
     bottom_sectors: List[Dict] = field(default_factory=list)  # 跌幅前5板塊
 
+    # 大盤層級籌碼面（目前僅台股）：三大法人買賣超合計 + 融資融券餘額
+    # 結構：{'institutional': {...} | None, 'margin': {...} | None}
+    chip_stats: Optional[Dict[str, Any]] = None
+
 
 @dataclass
 class MarketLightReviewResult:
@@ -376,7 +380,11 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         if self.profile.has_sector_rankings:
             self._get_sector_rankings(overview)
 
-        # 4. 獲取北向資金（可選）
+        # 4. 獲取大盤層級籌碼面（三大法人買賣超 + 融資融券餘額；目前僅台股）
+        if self.profile.has_chip_stats:
+            self._get_chip_statistics(overview)
+
+        # 5. 獲取北向資金（可選）
         # self._get_north_flow(overview)
 
         return overview
@@ -483,6 +491,33 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
 
         except Exception as e:
             logger.error("[大盘] %s action=get_sector_rankings status=failed error=%s", self._log_context(), e)
+
+    def _get_chip_statistics(self, overview: MarketOverview):
+        """獲取大盤層級籌碼面（三大法人買賣超合計 + 融資融券餘額；目前僅台股）。"""
+        try:
+            logger.info("[大盘] %s action=get_chip_stats status=start", self._log_context())
+
+            chip = self.data_manager.get_market_chip_stats(region=self.region)
+
+            if chip and (chip.get("institutional") or chip.get("margin")):
+                overview.chip_stats = chip
+                inst = chip.get("institutional") or {}
+                margin = chip.get("margin") or {}
+                logger.info(
+                    "[大盘] %s action=get_chip_stats status=success foreign=%s trust=%s dealer=%s "
+                    "margin_yi=%s short_lots=%s",
+                    self._log_context(),
+                    inst.get("foreign_net"),
+                    inst.get("trust_net"),
+                    inst.get("dealer_net"),
+                    margin.get("margin_balance_yi"),
+                    margin.get("short_balance_lots"),
+                )
+            else:
+                logger.warning("[大盘] %s action=get_chip_stats status=empty", self._log_context())
+
+        except Exception as e:
+            logger.error("[大盘] %s action=get_chip_stats status=failed error=%s", self._log_context(), e)
 
     # def _get_north_flow(self, overview: MarketOverview):
     #     """獲取北向資金流入"""
@@ -1048,6 +1083,69 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                 )
         return "\n".join(lines)
 
+    @staticmethod
+    def _fmt_signed_amount(value: Any, decimals: int = 2) -> Optional[str]:
+        """Format a signed numeric amount with thousands separators (e.g. +232.84 / -21,226)."""
+        if value is None:
+            return None
+        try:
+            num = float(value)
+        except (TypeError, ValueError):
+            return None
+        if decimals > 0:
+            return f"{num:+,.{decimals}f}"
+        return f"{int(round(num)):+,d}"
+
+    def _build_chip_block(self, overview: MarketOverview) -> str:
+        """構建大盤籌碼面區塊（三大法人買賣超 + 融資融券餘額；目前僅台股）。"""
+        chip = overview.chip_stats or {}
+        inst = chip.get("institutional") or {}
+        margin = chip.get("margin") or {}
+        if not inst and not margin:
+            return ""
+
+        en = self._get_review_language() == "en"
+        lines: List[str] = ["## Chips (Institutional / Margin)" if en else "## 籌碼面（三大法人 / 融資融券）"]
+
+        # 三大法人買賣超（億元）
+        inst_parts: List[str] = []
+        for key, zh_label, en_label in (
+            ("foreign_net", "外資", "Foreign"),
+            ("trust_net", "投信", "Trust"),
+            ("dealer_net", "自營商", "Dealer"),
+            ("total_net", "合計", "Total"),
+        ):
+            txt = self._fmt_signed_amount(inst.get(key), 2)
+            if txt is not None:
+                inst_parts.append(f"{(en_label if en else zh_label)} {txt}")
+        if inst_parts:
+            if en:
+                lines.append(f"- Institutional net (TWD 100m): {', '.join(inst_parts)}")
+            else:
+                lines.append(f"- 三大法人買賣超（億元）：{'、'.join(inst_parts)}")
+
+        # 融資餘額（億元）
+        m_bal = margin.get("margin_balance_yi")
+        if m_bal is not None:
+            m_chg = self._fmt_signed_amount(margin.get("margin_change_yi"), 2)
+            chg_txt = (f", Δ {m_chg} vs prior day" if en else f"（較前日 {m_chg} 億元）") if m_chg is not None else ""
+            if en:
+                lines.append(f"- Margin balance: {m_bal:,.2f} (TWD 100m){chg_txt}")
+            else:
+                lines.append(f"- 融資餘額：{m_bal:,.2f} 億元{chg_txt}")
+
+        # 融券餘額（張）
+        s_bal = margin.get("short_balance_lots")
+        if s_bal is not None:
+            s_chg = self._fmt_signed_amount(margin.get("short_change_lots"), 0)
+            chg_txt = (f", Δ {s_chg} vs prior day" if en else f"（較前日 {s_chg} 張）") if s_chg is not None else ""
+            if en:
+                lines.append(f"- Short balance: {s_bal:,d} lots{chg_txt}")
+            else:
+                lines.append(f"- 融券餘額：{s_bal:,d} 張{chg_txt}")
+
+        return "\n".join(lines) if len(lines) > 1 else ""
+
     def _build_news_block(self, news: List) -> str:
         """Build a compact source-aware news catalyst list for the rendered report."""
         if not news:
@@ -1259,6 +1357,9 @@ Lagging: {bottom_sectors_text if bottom_sectors_text else "N/A"}"""
             else:
                 sector_block = "## 板塊表現\n（該市場暫無板塊漲跌數據）"
 
+        # 籌碼面（三大法人 + 融資融券；目前僅台股有數據，其餘市場為空字串不注入）
+        chip_block = self._build_chip_block(overview)
+
         data_no_indices_hint = (
             "注意：由於行情數據獲取失敗，請主要根據【市場新聞】進行定性分析和總結，不要編造具體的指數點位。"
             if not indices_text
@@ -1300,6 +1401,8 @@ Lagging: {bottom_sectors_text if bottom_sectors_text else "N/A"}"""
 {stats_block}
 
 {sector_block}
+
+{chip_block}
 
 ## Market News
 {news_placeholder}
@@ -1364,6 +1467,8 @@ Output the report content directly, no extra commentary.
 {stats_block}
 
 {sector_block}
+
+{chip_block}
 
 ## 市場新聞
 {news_placeholder}

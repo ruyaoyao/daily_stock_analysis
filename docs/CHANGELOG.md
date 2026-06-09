@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] 台股个股分析补齐「个股筹码流动」：三大法人买卖超（外资/投信/自营商/合计，张）+ 融资融券余额（张，含当日增减与融资使用率），经 `DataFetcherManager.get_tw_stock_chip_flow()` 注入个股分析 prompt 与报告；上市走 TWSE OpenAPI（无需 Key），上柜（TPEx OpenAPI 受限时）回退 FinMind（`TaiwanStockInstitutionalInvestorsBuySell` / `TaiwanStockMarginPurchaseShortSale`，覆盖上市/上柜并含增减），单位统一为张；来源缺失则该项留空，不阻断分析。
+- [修复] 台股个股分析「检查项6：PE估值合理」长期显示「数据缺失，无法判断」：台股实时快照来源（Shioaji）不含本益比/股价净值比，现经 TWSE BWIBBU_ALL（无需 Key，含当日缓存）补齐上市个股 PE/PB 并注入实时行情与估值数据块；仅在字段缺失时填入、不覆盖既有值，来源失败静默降级。ETF/上柜个股 BWIBBU 未覆盖时仍为 N/A（符合预期）。
+- [新功能] 台股大盘复盘补齐大盘层级筹码面：三大法人买卖超合计（外资/投信/自营商/合计，亿元，TWSE BFI82U）+ 融资融券余额（融资余额亿元、融券余额张，TWSE MI_MARGN 信用交易统计），经 `DataFetcherManager.get_market_chip_stats(region='tw')` 注入复盘 prompt 的「籌碼面」区块；修复复盘报告出现「本數據源未提供三大法人…融資融券餘額」之类降级说明。来源均为 TWSE RWD（无需 Key），失败时优雅降级不阻断主流程。
 - [新功能] 新增根目录 `Makefile` 一键任务入口（`make help` / `serve` / `dev` / `web` / `analyze S=tw2330` / `review R=tw` / `margin N=30 SORT=` / `test` / `gate` / `lint` / `web-test` / `web-build`），统一封装现有 `python main.py` 与 `apps/dsa-web` 命令，降低记忆成本。
 - [新功能] 台股融资融券排行筛选 surface：API `GET /api/v1/tw-margin/ranking?top_n=&sort_by=`、CLI `python scripts/tw_margin_ranking.py --top 30 --sort margin_increase`、`make margin`，盘后查看全市场「融資增加/减少、融券增加」Top N（含融資使用率、券资比）；数据源不可用时优雅降级返回 `success=false`，个股 prompt 接线仍待后续。
 - [新功能] 台股融资融券排行新增 Web 页面 `/tw-margin`（侧边栏入口）：盘后展示全市场融資增加/减少、融券增加 Top N 排行表（融資增减、融資余额、融券增减、券资比、融資使用率），支持排序与条数（20/30/50/100）切换与刷新，台股涨红跌绿配色，zh-Hant 下经 OpenCC 整页转为正体；数据源不可用时显示空态提示。

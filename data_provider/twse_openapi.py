@@ -897,3 +897,192 @@ def get_tw_margin_ranking(top_n: int = 50, *, sort_by: str = "margin_increase") 
 
     out.sort(key=_key, reverse=True)
     return out[: max(1, top_n)]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 大盤層級籌碼面：三大法人買賣超合計 + 融資融券餘額（全市場，供大盤覆盤使用）
+# 來源均為 TWSE RWD JSON（無需 Key）。
+# ─────────────────────────────────────────────────────────────────────────────
+
+_TWSE_BFI82U_URL = "https://www.twse.com.tw/rwd/zh/fund/BFI82U?response=json"
+_TWSE_MARGIN_SUMMARY_URL = (
+    "https://www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN?response=json&selectType=MS"
+)
+
+
+def get_tw_institutional_total() -> Optional[dict]:
+    """TWSE（上市）三大法人買賣超『全市場合計』（單位：億元）。
+
+    來源（無需 Key）：BFI82U 三大法人買賣金額統計表，
+      回傳 {date, fields:[單位名稱,買進金額,賣出金額,買賣差額], data:[...]}，金額單位為元。
+    彙整：外資（外資及陸資 + 外資自營商）、投信、自營商（自行買賣 + 避險）、合計 之買賣超。
+    任何來源失敗或欄位缺失均優雅降級（返回 None 或對應欄位為 None）。
+    """
+    data = _get_json(_TWSE_BFI82U_URL)
+    if not isinstance(data, dict):
+        return None
+    rows = data.get("data")
+    if not isinstance(rows, list) or not rows:
+        return None
+
+    def _net_yi(raw: Any) -> Optional[float]:
+        v = _safe_float(raw)
+        return round(v / 1e8, 2) if v is not None else None
+
+    trust = total = None
+    foreign_acc = 0.0
+    foreign_seen = False
+    dealer_acc = 0.0
+    dealer_seen = False
+    for row in rows:
+        if not isinstance(row, list) or len(row) < 4:
+            continue
+        name = str(row[0] or "").strip()
+        net = _net_yi(row[3])
+        if net is None:
+            continue
+        if name == "投信":
+            trust = net
+        elif name == "合計":
+            total = net
+        elif name.startswith("外資"):
+            foreign_acc += net
+            foreign_seen = True
+        elif name.startswith("自營商"):
+            dealer_acc += net
+            dealer_seen = True
+
+    result = {
+        "foreign_net": round(foreign_acc, 2) if foreign_seen else None,
+        "trust_net": trust,
+        "dealer_net": round(dealer_acc, 2) if dealer_seen else None,
+        "total_net": total,
+        "unit": "億元",
+        "trade_date": _format_date_yyyymmdd(str(data.get("date"))) if data.get("date") else None,
+    }
+    if all(result.get(k) is None for k in ("foreign_net", "trust_net", "dealer_net", "total_net")):
+        return None
+    return result
+
+
+def get_tw_margin_total() -> Optional[dict]:
+    """TWSE（上市）融資融券餘額『全市場合計』。
+
+    來源（無需 Key）：MI_MARGN selectType=MS『信用交易統計』表，
+      tables[0].fields = [項目,買進,賣出,現金(券)償還,前日餘額,今日餘額]，
+      其中『融資金額(仟元)』為金額(仟元)、『融資(交易單位)』『融券(交易單位)』為張數。
+    返回：融資餘額(億元) 與融券餘額(張) 之今日/前日/增減。任何失敗均返回 None。
+    """
+    data = _get_json(_TWSE_MARGIN_SUMMARY_URL)
+    if not isinstance(data, dict):
+        return None
+    tables = data.get("tables")
+    if not isinstance(tables, list) or not tables:
+        return None
+    summary = tables[0] if isinstance(tables[0], dict) else {}
+    srows = summary.get("data")
+    if not isinstance(srows, list) or not srows:
+        return None
+
+    by_item: dict[str, list] = {}
+    for row in srows:
+        if isinstance(row, list) and len(row) >= 6:
+            by_item[str(row[0] or "").strip()] = row
+
+    def _col(item: str, idx: int) -> Optional[int]:
+        row = by_item.get(item)
+        return _safe_int(row[idx]) if row else None
+
+    # 融資金額(仟元) → 億元：仟元 / 1e5
+    m_amt_today_k = _col("融資金額(仟元)", 5)
+    m_amt_prev_k = _col("融資金額(仟元)", 4)
+    margin_balance_yi = round(m_amt_today_k / 1e5, 2) if m_amt_today_k is not None else None
+    margin_prev_yi = round(m_amt_prev_k / 1e5, 2) if m_amt_prev_k is not None else None
+    margin_change_yi = (
+        round(margin_balance_yi - margin_prev_yi, 2)
+        if (margin_balance_yi is not None and margin_prev_yi is not None)
+        else None
+    )
+
+    # 融券(交易單位) → 張
+    s_today = _col("融券(交易單位)", 5)
+    s_prev = _col("融券(交易單位)", 4)
+    short_change = (s_today - s_prev) if (s_today is not None and s_prev is not None) else None
+
+    result = {
+        "margin_balance_yi": margin_balance_yi,   # 融資餘額（億元）
+        "margin_prev_yi": margin_prev_yi,
+        "margin_change_yi": margin_change_yi,
+        "short_balance_lots": s_today,            # 融券餘額（張）
+        "short_prev_lots": s_prev,
+        "short_change_lots": short_change,
+        "trade_date": _format_date_yyyymmdd(str(data.get("date"))) if data.get("date") else None,
+    }
+    if margin_balance_yi is None and s_today is None:
+        return None
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 個股估值（本益比 / 股價淨值比 / 殖利率）— TWSE BWIBBU_ALL（上市，無需 Key）
+# 供個股分析補齊 PE/PB（台股實時快照來源 Shioaji 不含估值欄位）。
+# ─────────────────────────────────────────────────────────────────────────────
+
+_TWSE_BWIBBU_ALL_URL = "https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL"
+# 全市場估值表單檔即含逾千檔，以「資料日期」為鍵做極簡記憶體快取，避免一次分析重複下載。
+_tw_valuation_cache: dict = {"date": None, "map": None}
+
+
+def _normalize_tw_valuation_code(stock_code: str) -> str:
+    """將 'tw2330' / 'TW2330' / '2330' 統一為 BWIBBU 的證券代號 '2330'（保留字母如 00631L）。"""
+    code = str(stock_code or "").strip().upper()
+    if code.startswith("TW"):
+        code = code[2:]
+    return code.strip()
+
+
+def _load_tw_valuation_map() -> Optional[dict]:
+    """下載並解析 BWIBBU_ALL 為 {證券代號: {pe_ratio, pb_ratio, dividend_yield}}；附當日快取。"""
+    today = date.today().isoformat()
+    if _tw_valuation_cache.get("date") == today and _tw_valuation_cache.get("map"):
+        return _tw_valuation_cache["map"]
+
+    rows = _get_json(_TWSE_BWIBBU_ALL_URL)
+    if not isinstance(rows, list) or not rows:
+        return None
+    out: dict = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        code = str(row.get("Code") or "").strip().upper()
+        if not code:
+            continue
+        out[code] = {
+            "pe_ratio": _safe_float(row.get("PEratio")),
+            "pb_ratio": _safe_float(row.get("PBratio")),
+            "dividend_yield": _safe_float(row.get("DividendYield")),
+        }
+    if not out:
+        return None
+    _tw_valuation_cache["date"] = today
+    _tw_valuation_cache["map"] = out
+    return out
+
+
+def get_tw_valuation(stock_code: str) -> Optional[dict]:
+    """上市個股估值：{pe_ratio, pb_ratio, dividend_yield}，取自 TWSE BWIBBU_ALL（無需 Key）。
+
+    虧損股 PEratio 可能為空 → pe_ratio 為 None；找不到代號或來源失敗返回 None。
+    """
+    code = _normalize_tw_valuation_code(stock_code)
+    if not code:
+        return None
+    vmap = _load_tw_valuation_map()
+    if not vmap:
+        return None
+    row = vmap.get(code)
+    if not row:
+        return None
+    if row.get("pe_ratio") is None and row.get("pb_ratio") is None:
+        return None
+    return dict(row)

@@ -189,3 +189,117 @@ class FinMindTwFetcher(BaseFetcher):
         total_volume = float(volumes.sum())
         avg_cost = float((closes * volumes).sum() / total_volume) if total_volume else current_price
         return current_price, avg_cost
+
+    # ------------------------------------------------------------------
+    # 个股筹码流动：三大法人买卖超 + 融资融券（覆盖上市与上柜，含当日增减）
+    # 供 DataFetcherManager.get_tw_stock_chip_flow 在 TWSE/TPEx OpenAPI 不可用时回退。
+    # ------------------------------------------------------------------
+    def _finmind_rows(self, dataset: str, bare_code: str, days: int = 14) -> list:
+        """拉取 FinMind 数据集最近 days 天的原始行；失败返回空列表。"""
+        end_date = datetime.now().strftime("%Y-%m-%d")
+        start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        headers = {"Authorization": f"Bearer {self._token}"} if self._token else {}
+        try:
+            response = requests.get(
+                _FINMIND_API_URL,
+                params={
+                    "dataset": dataset,
+                    "data_id": bare_code,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                },
+                headers=headers,
+                timeout=30,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except Exception as exc:
+            logger.info("[FinMindTwFetcher] %s 查询失败 %s: %s", dataset, bare_code, exc)
+            return []
+        return payload.get("data") or []
+
+    @staticmethod
+    def _shares_to_lots(shares) -> Optional[int]:
+        if shares is None:
+            return None
+        try:
+            return int(round(float(shares) / 1000.0))
+        except (TypeError, ValueError):
+            return None
+
+    def get_institutional_net(self, stock_code: str) -> Optional[dict]:
+        """最新交易日三大法人买卖超净额（张），来源 FinMind。覆盖上市/上柜。"""
+        if not _is_tw_market(stock_code):
+            return None
+        bare_code = normalize_tdcc_stock_code(stock_code)
+        rows = self._finmind_rows("TaiwanStockInstitutionalInvestorsBuySell", bare_code)
+        if not rows:
+            return None
+        latest = max(r.get("date", "") for r in rows if r.get("date"))
+        if not latest:
+            return None
+        foreign = trust = dealer = 0
+        seen = False
+        for r in rows:
+            if r.get("date") != latest:
+                continue
+            name = str(r.get("name") or "")
+            try:
+                net = float(r.get("buy") or 0) - float(r.get("sell") or 0)
+            except (TypeError, ValueError):
+                continue
+            seen = True
+            if name in ("Foreign_Investor", "Foreign_Dealer_Self"):
+                foreign += net
+            elif name == "Investment_Trust":
+                trust += net
+            elif name in ("Dealer_self", "Dealer_Hedging"):
+                dealer += net
+        if not seen:
+            return None
+        total = foreign + trust + dealer
+        return {
+            "date": latest,
+            "foreign_net_lots": self._shares_to_lots(foreign),
+            "trust_net_lots": self._shares_to_lots(trust),
+            "dealer_net_lots": self._shares_to_lots(dealer),
+            "total_net_lots": self._shares_to_lots(total),
+            "source": "finmind",
+        }
+
+    def get_margin_flow(self, stock_code: str) -> Optional[dict]:
+        """最新交易日融资融券余额与当日增减（张），来源 FinMind。覆盖上市/上柜。"""
+        if not _is_tw_market(stock_code):
+            return None
+        bare_code = normalize_tdcc_stock_code(stock_code)
+        rows = self._finmind_rows("TaiwanStockMarginPurchaseShortSale", bare_code)
+        if not rows:
+            return None
+        rows = [r for r in rows if r.get("date")]
+        if not rows:
+            return None
+        latest = max(rows, key=lambda r: r.get("date"))
+
+        def _int(val) -> Optional[int]:
+            try:
+                return int(round(float(val)))
+            except (TypeError, ValueError):
+                return None
+
+        m_today = _int(latest.get("MarginPurchaseTodayBalance"))
+        m_prev = _int(latest.get("MarginPurchaseYesterdayBalance"))
+        s_today = _int(latest.get("ShortSaleTodayBalance"))
+        s_prev = _int(latest.get("ShortSaleYesterdayBalance"))
+        m_limit = _int(latest.get("MarginPurchaseLimit"))
+        usage = round(m_today / m_limit * 100, 2) if (m_today and m_limit and m_limit > 0) else None
+        if m_today is None and s_today is None:
+            return None
+        return {
+            "date": latest.get("date"),
+            "margin_balance_lots": m_today,
+            "margin_change_lots": (m_today - m_prev) if (m_today is not None and m_prev is not None) else None,
+            "short_balance_lots": s_today,
+            "short_change_lots": (s_today - s_prev) if (s_today is not None and s_prev is not None) else None,
+            "margin_usage_pct": usage,
+            "source": "finmind",
+        }

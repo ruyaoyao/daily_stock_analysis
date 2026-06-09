@@ -360,6 +360,20 @@ class StockAnalysisPipeline:
             except Exception as e:
                 logger.warning(f"{stock_name}({code}) 获取筹码分布失败: {e}")
 
+            # Step 2.1: 台股个股筹码流动（三大法人买卖超 + 融资融券；非台股返回 None）
+            tw_chip_flow = None
+            try:
+                tw_chip_flow = self.fetcher_manager.get_tw_stock_chip_flow(code)
+                if tw_chip_flow:
+                    _inst = tw_chip_flow.get("institutional") or {}
+                    _mar = tw_chip_flow.get("margin") or {}
+                    logger.info(
+                        f"{stock_name}({code}) 台股筹码流动: 三大法人合计={_inst.get('total_net_lots')}张, "
+                        f"融资余额={_mar.get('margin_balance_lots')}张"
+                    )
+            except Exception as e:
+                logger.warning(f"{stock_name}({code}) 获取台股筹码流动失败: {e}")
+
             # If agent mode is explicitly enabled, or specific agent skills are configured, use the Agent analysis pipeline.
             # NOTE: use config.agent_mode (explicit opt-in) instead of
             # config.is_agent_available() so that users who only configured an
@@ -537,6 +551,8 @@ class StockAnalysisPipeline:
             enhanced_context["market_phase_context"] = market_phase_context_dict
             if portfolio_context is not None:
                 enhanced_context["portfolio_context"] = dict(portfolio_context)
+            if tw_chip_flow:
+                enhanced_context["tw_chip_flow"] = tw_chip_flow
             
             # Step 7: 调用 AI 分析（传入增强的上下文和新闻）
             report_language = normalize_report_language(getattr(self.config, "report_language", "zh"))

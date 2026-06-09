@@ -25,6 +25,8 @@ class MarketProfile:
     has_market_stats: bool
     # 市场概况是否包含板块涨跌（A 股有，美股暂无）
     has_sector_rankings: bool
+    # 是否提供大盘层级筹码面（三大法人买卖超合计 + 融资融券余额）；目前仅台股
+    has_chip_stats: bool = False
 
 
 CN_PROFILE = MarketProfile(
@@ -79,6 +81,8 @@ TW_PROFILE = MarketProfile(
     # 台股涨跌家数/成交额/类股涨跌幅经 TWSE OpenAPI（无需密钥）取得（上市 TWSE 口径）
     has_market_stats=True,
     has_sector_rankings=True,
+    # 台股大盘筹码面：三大法人买卖超合计 + 融资融券余额（TWSE RWD，无需密钥）
+    has_chip_stats=True,
 )
 
 
