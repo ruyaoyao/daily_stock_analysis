@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-- [新功能] 新增根目录 `Makefile` 一键任务入口（`make help` / `serve` / `dev` / `web` / `analyze S=tw2330` / `review R=tw` / `test` / `gate` / `lint` / `web-test` / `web-build`），统一封装现有 `python main.py` 与 `apps/dsa-web` 命令，降低记忆成本。
+- [新功能] 新增根目录 `Makefile` 一键任务入口（`make help` / `serve` / `dev` / `web` / `analyze S=tw2330` / `review R=tw` / `margin N=30 SORT=` / `test` / `gate` / `lint` / `web-test` / `web-build`），统一封装现有 `python main.py` 与 `apps/dsa-web` 命令，降低记忆成本。
+- [新功能] 台股融资融券排行筛选 surface：API `GET /api/v1/tw-margin/ranking?top_n=&sort_by=`、CLI `python scripts/tw_margin_ranking.py --top 30 --sort margin_increase`、`make margin`，盘后查看全市场「融資增加/减少、融券增加」Top N（含融資使用率、券资比）；数据源不可用时优雅降级返回 `success=false`，个股 prompt 接线仍待后续。
 - [新功能] 新增 TWSE 融资融券全市场排行 data 层 `twse_openapi.get_tw_margin_ranking()`（无需 Key，取自 MI_MARGN，单位张）：默认按「融資增加」降序，含融券增减、融資使用率、券资比，支持 `sort_by` 切换；为盘后台股融资融券「Top N 增减排行」与个股分析做数据准备（个股 prompt 接线待后续）。
 - [改进] zh-Hant OpenCC 转换后追加两岸常用词领域修正（`shared/zh_hant_phrase_fixes.json`）：股票代碼、支撐位、停損、帳戶、後台、設定等，前后端共用词表。
 - [修复] 台股大盘复盘櫃買指數改用 TPEx OpenAPI（`tpex_index`，无需 Key），修复 yfinance `^TWOII` 数据滞后/不准（如显示前一交易日点位）；并补齐指数级成交额：加權指數取 TWSE `FMTQIK`、櫃買指數取 TPEx `tpex_daily_trading_index`，修复指数表「成交額(億)」列显示 N/A。TPEx 取数失败时回退 yfinance。

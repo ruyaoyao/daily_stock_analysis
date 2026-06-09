@@ -5,9 +5,11 @@ PYTHON ?= python
 WEB := apps/dsa-web
 S ?=
 R ?= cn
+N ?= 30
+SORT ?= margin_increase
 
 .DEFAULT_GOAL := help
-.PHONY: help install serve dev web analyze review schedule test gate web-test web-build lint clean
+.PHONY: help install serve dev web analyze review margin schedule test gate web-test web-build lint clean
 
 help: ## List available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -34,6 +36,9 @@ analyze: ## Analyze stocks (make analyze S=tw2330,tw0050,AAPL); empty S uses STO
 
 review: ## Market review (make review R=tw  | cn/hk/us/tw/both)
 	MARKET_REVIEW_REGION="$(R)" $(PYTHON) main.py --market-review
+
+margin: ## TWSE 融資融券 Top N 排行 (make margin N=30 SORT=margin_increase|margin_decrease|short_increase)
+	$(PYTHON) scripts/tw_margin_ranking.py --top $(N) --sort $(SORT)
 
 schedule: ## Run the built-in scheduler (daily tasks)
 	$(PYTHON) main.py --schedule

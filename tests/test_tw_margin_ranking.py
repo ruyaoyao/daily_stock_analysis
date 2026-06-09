@@ -3,6 +3,8 @@
 
 from unittest.mock import patch
 
+import pytest
+
 from data_provider import twse_openapi as tw
 
 # Mirrors the openapi MI_MARGN row shape (units = 張).
@@ -44,3 +46,30 @@ def test_ranking_margin_decrease_sort():
 def test_ranking_none_on_fetch_failure():
     with patch.object(tw, "_get_json", return_value=None):
         assert tw.get_tw_margin_ranking() is None
+
+
+# --- screener API endpoint ---
+
+def test_endpoint_returns_ranking_payload():
+    from api.v1.endpoints import tw_margin as ep
+    sample = [{"stock_code": "2303", "name": "聯電", "margin_change": 29514}]
+    with patch("data_provider.twse_openapi.get_tw_margin_ranking", return_value=sample):
+        out = ep.tw_margin_ranking(top_n=5, sort_by="margin_increase")
+    assert out["success"] is True
+    assert out["market"] == "tw" and out["unit"] == "張"
+    assert out["count"] == 1 and out["ranking"][0]["stock_code"] == "2303"
+
+
+def test_endpoint_graceful_when_source_unavailable():
+    from api.v1.endpoints import tw_margin as ep
+    with patch("data_provider.twse_openapi.get_tw_margin_ranking", return_value=None):
+        out = ep.tw_margin_ranking(top_n=5, sort_by="margin_increase")
+    assert out["success"] is False and out["ranking"] == [] and out["error"]
+
+
+def test_endpoint_rejects_invalid_sort():
+    from fastapi import HTTPException
+    from api.v1.endpoints import tw_margin as ep
+    with pytest.raises(HTTPException) as exc:
+        ep.tw_margin_ranking(top_n=5, sort_by="bogus")
+    assert exc.value.status_code == 400
