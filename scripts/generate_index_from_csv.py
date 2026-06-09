@@ -618,12 +618,17 @@ def load_tw_curated(data_dir: Path) -> List[Dict[str, Any]]:
     return rows
 
 
-def build_tw_compressed_rows(curated: List[Dict[str, Any]]) -> List[List]:
+def build_tw_compressed_rows(curated: List[Dict[str, Any]], market: str = "TW") -> List[List]:
     """构建台股压缩索引行。
 
     台股的 canonicalCode 与 displayCode 都带显式 ``tw`` 前缀，使得在下拉中
     选中条目后提交的是可路由代码（后端依 ``TW`` 前缀 / ``.TW`` 后缀识别台股）。
     纯数字代码作为别名保留，用户输入 ``2330`` 仍可命中。
+
+    ``market`` 区分上市/上柜，仅用于前端 badge 与市场过滤：
+      - ``"TW"``  = 上市（TWSE）
+      - ``"TWO"`` = 上柜（TPEx）
+    两者后端路由口径相同（皆经 ``tw`` 前缀识别），不影响数据抓取。
     """
     rows: List[List] = []
     for item in curated:
@@ -638,7 +643,7 @@ def build_tw_compressed_rows(curated: List[Dict[str, Any]]) -> List[List]:
             pinyin_full,
             pinyin_abbr,
             aliases,
-            "TW",
+            market,
             item["asset_type"],
             True,
             100,
@@ -746,6 +751,67 @@ def merge_tw_listed_into_index_files(*, test: bool = False) -> int:
     return 0
 
 
+def merge_tw_full_into_index_files(*, test: bool = False) -> int:
+    """合并全部上市(TWSE)+上柜(TPEx)证券到现有索引，区分 market=TW/TWO 供前端 badge。
+
+    上市经 TWSE Open API（无需 Key）；上柜经 FinMind TaiwanStockInfo（tokenless 可用，
+    FINMIND_TOKEN 更稳）。两市后端路由口径相同（皆 ``tw`` 前缀），market 仅用于显示。
+    保留全部既有非台股(CN/HK/US/BSE)条目，幂等替换历史 TW/TWO 条目。
+    """
+    from data_provider.twse_stock_list import fetch_twse_listed_securities
+    from data_provider.tpex_stock_list import fetch_tpex_listed_securities
+
+    listed = fetch_twse_listed_securities()
+    if not listed:
+        print("[Error] 未能从 TWSE Open API 取得上市清单，已跳过合并")
+        return 1
+    otc = fetch_tpex_listed_securities()
+    if not otc:
+        print("[Warn] 未能取得上柜(FinMind)清单，将仅合并上市；上柜搜索本次未更新")
+
+    for item in listed:
+        item["name"] = normalize_stock_name_for_index(item["name"], "TW")
+    for item in otc:
+        item["name"] = normalize_stock_name_for_index(item["name"], "TW")
+
+    tw_rows = build_tw_compressed_rows(listed, market="TW")
+    two_rows = build_tw_compressed_rows(otc, market="TWO")
+    print(f"      构建上市(TW)条目：{len(tw_rows)} 条；上柜(TWO)条目：{len(two_rows)} 条")
+
+    primary = TW_INDEX_FILES[0]
+    if not primary.exists():
+        print(f"[Error] 找不到主索引文件：{primary}")
+        return 1
+
+    with open(primary, "r", encoding="utf-8") as f:
+        existing = json.load(f)
+    kept = [
+        it for it in existing
+        if not (isinstance(it, list) and len(it) > 6 and it[6] in ("TW", "TWO"))
+    ]
+    merged = kept + tw_rows + two_rows
+    print(f"      合并前(非台股)：{len(kept)} 条；合并后：{len(merged)} 条")
+
+    if test:
+        print("      测试模式：跳过写入")
+        return 0
+
+    written = []
+    for path in TW_INDEX_FILES:
+        if path is not primary and not path.exists():
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("[\n")
+            for i, item in enumerate(merged):
+                json.dump(item, f, ensure_ascii=False, separators=(",", ":"))
+                f.write(",\n" if i < len(merged) - 1 else "\n")
+            f.write("]\n")
+        written.append(str(path.relative_to(Path(__file__).parent.parent)))
+    print(f"      已写入：{', '.join(written)}")
+    return 0
+
+
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description='从 CSV 生成股票自动补全索引')
@@ -758,6 +824,11 @@ def main():
         '--merge-tw-listed',
         action='store_true',
         help='从 TWSE Open API 拉取所有上市证券并合并进现有索引（保留其他市场）'
+    )
+    parser.add_argument(
+        '--merge-tw-full',
+        action='store_true',
+        help='拉取上市(TWSE)+上柜(TPEx/FinMind)全部证券合并进索引，区分 market=TW/TWO（保留其他市场）'
     )
     parser.add_argument(
         '--source',
@@ -783,6 +854,10 @@ def main():
     if args.merge_tw and args.merge_tw_listed:
         print("[Error] --merge-tw 与 --merge-tw-listed 不可同时使用")
         return 1
+
+    if args.merge_tw_full:
+        print("模式：拉取上市(TWSE)+上柜(TPEx/FinMind)清单并合并到现有索引")
+        return merge_tw_full_into_index_files(test=args.test)
 
     if args.merge_tw_listed:
         print("模式：拉取 TWSE 上市清单并合并到现有索引")
