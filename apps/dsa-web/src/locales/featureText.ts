@@ -73,3 +73,55 @@ export const PORTFOLIO_TEXT = {
 export const PORTFOLIO_SIDE_LABELS: Record<UiLanguage, Record<PortfolioSide, string>> = { zh: { buy: '买入', sell: '卖出' }, 'zh-Hant': { buy: '買入', sell: '賣出' }, en: { buy: 'Buy', sell: 'Sell' } };
 export const PORTFOLIO_CASH_DIRECTION_LABELS: Record<UiLanguage, Record<PortfolioCashDirection, string>> = { zh: { in: '流入', out: '流出' }, 'zh-Hant': { in: '流入', out: '流出' }, en: { in: 'Inflow', out: 'Outflow' } };
 export const PORTFOLIO_CORPORATE_ACTION_LABELS: Record<UiLanguage, Record<PortfolioCorporateActionType, string>> = { zh: { cash_dividend: '现金分红', split_adjustment: '拆并股调整' }, 'zh-Hant': { cash_dividend: '現金分紅', split_adjustment: '拆並股調整' }, en: { cash_dividend: 'Cash dividend', split_adjustment: 'Split adjustment' } };
+
+export const TW_MARGIN_TEXT: Record<UiLanguage, {
+  documentTitle: string; title: string; subtitle: string;
+  sortLabel: string; sortMarginInc: string; sortMarginDec: string; sortShortInc: string;
+  topNLabel: string; refresh: string; refreshing: string; unitNote: string;
+  loading: string; emptyTitle: string; emptyDescription: string;
+  colRank: string; colCode: string; colName: string; colMarginChange: string;
+  colMarginBalance: string; colShortChange: string; colShortRatio: string; colUsage: string;
+}> = {
+  zh: {
+    documentTitle: '台股融资融券排行 - DSA',
+    title: '台股融资融券排行',
+    subtitle: '上市（TWSE）盘后融资融券 Top N，单位：张',
+    sortLabel: '排序',
+    sortMarginInc: '融资增加', sortMarginDec: '融资减少', sortShortInc: '融券增加',
+    topNLabel: '数量', refresh: '刷新', refreshing: '刷新中...',
+    unitNote: '数据来自 TWSE 公开资料（盘后结算后更新）；单位：张（1 张 = 1000 股）。',
+    loading: '正在加载排行...',
+    emptyTitle: '暂无数据',
+    emptyDescription: 'TWSE 融资融券资料暂不可用（可能盘后尚未结算或来源异常），稍后再试。',
+    colRank: '#', colCode: '代号', colName: '股票', colMarginChange: '融资增减',
+    colMarginBalance: '融资余额', colShortChange: '融券增减', colShortRatio: '券资比%', colUsage: '使用率%',
+  },
+  'zh-Hant': {
+    documentTitle: '台股融資融券排行 - DSA',
+    title: '台股融資融券排行',
+    subtitle: '上市（TWSE）盤後融資融券 Top N，單位：張',
+    sortLabel: '排序',
+    sortMarginInc: '融資增加', sortMarginDec: '融資減少', sortShortInc: '融券增加',
+    topNLabel: '數量', refresh: '重新整理', refreshing: '重新整理中...',
+    unitNote: '資料來自 TWSE 公開資料（盤後結算後更新）；單位：張（1 張 = 1000 股）。',
+    loading: '正在載入排行...',
+    emptyTitle: '暫無資料',
+    emptyDescription: 'TWSE 融資融券資料暫不可用（可能盤後尚未結算或來源異常），稍後再試。',
+    colRank: '#', colCode: '代號', colName: '股票', colMarginChange: '融資增減',
+    colMarginBalance: '融資餘額', colShortChange: '融券增減', colShortRatio: '券資比%', colUsage: '使用率%',
+  },
+  en: {
+    documentTitle: 'TW Margin Ranking - DSA',
+    title: 'Taiwan Margin / Short Ranking',
+    subtitle: 'TWSE post-market margin/short Top N (unit: 張 / lots)',
+    sortLabel: 'Sort',
+    sortMarginInc: 'Margin increase', sortMarginDec: 'Margin decrease', sortShortInc: 'Short increase',
+    topNLabel: 'Count', refresh: 'Refresh', refreshing: 'Refreshing...',
+    unitNote: 'Data from TWSE open data (updates after post-market settlement); unit: 張 (1 lot = 1000 shares).',
+    loading: 'Loading ranking...',
+    emptyTitle: 'No data',
+    emptyDescription: 'TWSE margin data is unavailable (post-market not settled yet or source error). Try again later.',
+    colRank: '#', colCode: 'Code', colName: 'Name', colMarginChange: 'Margin Δ',
+    colMarginBalance: 'Margin bal.', colShortChange: 'Short Δ', colShortRatio: 'Short/Margin%', colUsage: 'Usage%',
+  },
+};
