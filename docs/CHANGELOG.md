@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-- [改进] 台股融资融券排行（`/tw-margin` 页面与 `GET /api/v1/tw-margin/ranking`）新增资料日期：响应增加 `trade_date`（取自 TWSE MI_MARGN 信用交易统计的权威日期，`get_tse_margin_trade_date()`），页面在单位说明旁显示「更新日期: YYYY-MM-DD」；来源不可用时为 null 不显示。
+- [改进] 台股融资融券排行（`/tw-margin` 页面与 `GET /api/v1/tw-margin/ranking`）新增资料日期：响应增加 `trade_date`（取自 TWSE MI_MARGN 信用交易统计的权威日期，`get_tse_margin_trade_date()`），页面在单位说明旁显示「更新日期: YYYY-MM-DD」；来源不可用时为 null 不显示。单位说明同时标注更新时点：TWSE 融資融券餘額于交易日约 21:00（台北时间）盘后结算后更新，非交易日不更新（故盘中/当日 21:00 前显示的是上一交易日的已结算资料）。
 
 - [新功能] 个股分析报告新增「个股筹码流动」结构化卡片（台股）：在策略点位区下方展示三大法人买卖超（外资/投信/自营商/合计，张）与融资融券余额（含当日增减、融资使用率），台股涨红跌绿配色；数据经 `report.chip_flow` 下发（前端 `TwChipFlowCard`），仅台股有数据时显示，非台股不渲染。卡片在历史回看时同样保留（持久化于 `raw_result.tw_chip_flow`，经 `GET /api/v1/history/{id}` 的 `chip_flow` 字段下发）。
 - [新功能] 台股上柜(櫃買/OTC)个股现可被搜索：新增 `data_provider/tpex_stock_list.py` 经 FinMind `TaiwanStockInfo`（tokenless 可用）拉取上柜证券，`python scripts/generate_index_from_csv.py --merge-tw-full` 合并上市(TWSE OpenAPI)+上柜进 `stocks.index.json`（约 1364 上市 + 1129 上柜）。索引以 `market=TW`(上市)/`TWO`(上柜) 区分，前端下拉新增「上市/上柜」badge；两市后端路由口径一致（皆经 `tw` 前缀），`SUPPORTED_STOCK_INDEX_MARKETS` 增加 `TWO`。
