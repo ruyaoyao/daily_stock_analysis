@@ -104,6 +104,10 @@ class TestFetcherSourceOptimization(unittest.TestCase):
                 "EfinanceFetcher",
                 "AkshareFetcher",
                 "PytdxFetcher",
+                # FinMindTwFetcher (TW chip via TDCC) is keyless -> always available,
+                # so it is not pruned as an "unconfigured optional" source. Priority 2
+                # sorts it right after PytdxFetcher.
+                "FinMindTwFetcher",
                 "BaostockFetcher",
                 "YfinanceFetcher",
             ],

@@ -561,7 +561,9 @@ class TestValidateStructuredNotification:
         )
 
     def test_no_search_engine_is_info(self):
-        cfg = _make_config(searxng_public_instances_enabled=False)
+        # TW RSS is a keyless search capability (default on); disable it too so the
+        # "no search engine configured" scenario actually holds.
+        cfg = _make_config(searxng_public_instances_enabled=False, tw_rss_news_enabled=False)
         issues = cfg.validate_structured()
         info = [i for i in issues if i.severity == "info"]
         assert any("搜索引擎" in i.message for i in info)

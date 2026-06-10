@@ -851,7 +851,12 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             "TW_RSS_GOOGLE_NEWS_ENABLED=true",
             "TW_RSS_GOOGLE_NEWS_ENABLED=false",
         ],
-        "docs": [],
+        "docs": [
+            {
+                "label": "完整指南：搜索服务配置",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/full-guide.md#搜索服务配置",
+            },
+        ],
         "warning_codes": [],
     },
     "TW_RSS_FINMIND_NEWS_ENABLED": {
@@ -872,7 +877,12 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             "TW_RSS_FINMIND_NEWS_ENABLED=true",
             "TW_RSS_FINMIND_NEWS_ENABLED=false",
         ],
-        "docs": [],
+        "docs": [
+            {
+                "label": "完整指南：搜索服务配置",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/full-guide.md#搜索服务配置",
+            },
+        ],
         "warning_codes": [],
     },
     "ENABLE_REALTIME_QUOTE": {
