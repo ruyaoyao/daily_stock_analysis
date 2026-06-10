@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] 台股个股「筹码流动」改用权威 T+0 来源并定主备：三大法人以 FinMind 为主（约 150ms、值与官方一致）、官方 TWSE T86 / TPEx `insti/dailyTrade` CSV 为备（权威）；融资融券以官方 www T+0 为主（TWSE `MI_MARGN` / TPEx `margin/balance`，约 70-120ms、既权威又最快、含当日增减），FinMind 为备。新增 `_get_tpex_www_json`（处理 TPEx 凭证缺 SKI 的 SSL 重试、stat 不分大小写）；上柜三大法人改走官方 CSV（取代被 302 的 openapi）；融资融券改走 www T+0（取代 T+1、无日期的 openapi）。实测 4 象限值/日期一致＝当日；端到端每档 ~0.4-0.9s。
+- [修复] 台股个股三大法人/融资融券「永远取不到当日」：`_recent_trading_days()` 原从「昨天」起算，导致 T86/MI_MARGN 等盘后当日资料发布后仍取前一交易日；改为从「今天」起算（发布前自动回退），并加回归测试锁定。
+- [改进] 台股个股筹码 auto 模式改「逐日交错」试 TSE→OTC，避免上柜股票先空转 5 次上市来源（上柜个股端到端由 ~12.5s 降到 ~0.9s）。
+- [新功能] 新增 `scripts/sync-upstream.sh`（`make sync-upstream [PUSH=1] [STRATEGY=ff|merge|rebase]`）：fork 手动同步 upstream(ZhuLinsen) 到 main（预设 fast-forward、干净工作区检查、默认不 push、结束切回原分支）。
+
 - [新功能] 台股大盘复盘新增「跨数据源日期一致性守门」：以指数资料日期为锚，校验漲跌家數/三大法人/融資融券等各来源的 `trade_date` 是否同属一个交易日；一致时在 prompt 标注「資料日期：YYYY-MM-DD」，出现分歧时记 WARNING 并在 prompt 加注各来源日期与告警，要求按各自日期解读、勿把不同交易日资料混判（指数项 `get_tw_taiex_index`/`get_tw_otc_index` 现回传 `trade_date`）。
 - [修复] 台股盤面總覽「成交額」标签与活跃度判定不符台股口径：原沿用 A 股「兩市成交額」措辞且活跃度门槛按 A 股量级判定（把 1.4 兆的爆量日误判为「中等活躍」）。台股改标「上市成交額」（该值为上市/TWSE 口径，櫃買另列于指数表），活跃度门槛改按台股量级（高活跃≥12000 億、中等≥6000 億）；台股成交额英文单位由误植的「CNY 100m」更正为「TWD 100m」。数值本身正确（取自 TWSE FMTQIK 当日总额）。
 

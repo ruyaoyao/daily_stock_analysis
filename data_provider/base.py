@@ -3402,58 +3402,66 @@ class DataFetcherManager:
     def get_tw_stock_chip_flow(self, stock_code: str) -> Optional[Dict[str, Any]]:
         """台股个股筹码流动：三大法人买卖超（净，张）+ 融资融券余额（张）。
 
-        非台股返回 None。上市（TSE）经 TWSE OpenAPI（无需 Key）；上柜（OTC）TPEx
-        OpenAPI 在部分环境被重定向不可用，回退 FinMind（TaiwanStock* 数据集，需
-        FINMIND_TOKEN 时更稳）。任一子项缺失即留空，整体不可得时返回 None。
+        非台股返回 None。来源优先序（值经实测三家一致、皆 T+0）：
+          - 三大法人：FinMind 优先（约 150ms），官方 TWSE T86 / TPEx CSV 后备（权威，~1.3s）。
+          - 融资融券：官方 www T+0 优先（既权威又最快 ~100ms，含当日增减），FinMind 后备。
+        任一子项缺失即留空，整体不可得时返回 None。
         """
         if not _is_tw_market(stock_code):
             return None
 
+        fetcher = self._get_fetcher_by_name("FinMindTwFetcher")
         institutional: Optional[Dict[str, Any]] = None
         margin: Optional[Dict[str, Any]] = None
 
-        # 1) 上市优先走 TWSE OpenAPI（无需 Key、无频率限制）
+        # 三大法人：FinMind 优先（快、值与官方一致），官方 T86/TPEx CSV 后备（权威）
+        if fetcher is not None and hasattr(fetcher, "get_institutional_net"):
+            try:
+                institutional = fetcher.get_institutional_net(stock_code)
+            except Exception as e:
+                logger.info("[FinMind] 三大法人查询失败 %s: %s", stock_code, e)
+        if institutional is None:
+            try:
+                from data_provider.twse_openapi import get_institutional_investors
+                inst_raw = get_institutional_investors(stock_code)
+                if inst_raw:
+                    institutional = {
+                        "date": inst_raw.get("date"),
+                        # 官方为「股」→ 转「张」（1 张 = 1000 股）；FinMind 已是「张」
+                        "foreign_net_lots": self._shares_to_lots(inst_raw.get("foreign_net")),
+                        "trust_net_lots": self._shares_to_lots(inst_raw.get("trust_net")),
+                        "dealer_net_lots": self._shares_to_lots(inst_raw.get("dealer_net")),
+                        "total_net_lots": self._shares_to_lots(inst_raw.get("total_net")),
+                        "source": "twse_openapi",
+                    }
+            except Exception as e:
+                logger.warning("[TWSE/TPEx] 三大法人后备查询失败 %s: %s", stock_code, e)
+
+        # 融资融券：官方 www T+0 优先（权威且最快、含当日增减），FinMind 后备
         try:
-            from data_provider.twse_openapi import (
-                get_institutional_investors,
-                get_margin_balance,
-            )
-            inst_raw = get_institutional_investors(stock_code)
-            if inst_raw:
-                institutional = {
-                    "date": inst_raw.get("date"),
-                    # 股 → 张（1 张 = 1000 股）
-                    "foreign_net_lots": self._shares_to_lots(inst_raw.get("foreign_net")),
-                    "trust_net_lots": self._shares_to_lots(inst_raw.get("trust_net")),
-                    "dealer_net_lots": self._shares_to_lots(inst_raw.get("dealer_net")),
-                    "total_net_lots": self._shares_to_lots(inst_raw.get("total_net")),
-                    "source": "twse_openapi",
-                }
+            from data_provider.twse_openapi import get_margin_balance
             margin_raw = get_margin_balance(stock_code)
             if margin_raw:
+                m_bal = margin_raw.get("margin_balance")
+                m_prev = margin_raw.get("margin_prev")
+                s_bal = margin_raw.get("short_balance")
+                s_prev = margin_raw.get("short_prev")
                 margin = {
                     "date": margin_raw.get("date"),
-                    "margin_balance_lots": margin_raw.get("margin_balance"),
-                    "margin_change_lots": None,  # openapi 单日端点不含前日余额
-                    "short_balance_lots": margin_raw.get("short_balance"),
-                    "short_change_lots": None,
+                    "margin_balance_lots": m_bal,
+                    "margin_change_lots": (m_bal - m_prev) if (m_bal is not None and m_prev is not None) else None,
+                    "short_balance_lots": s_bal,
+                    "short_change_lots": (s_bal - s_prev) if (s_bal is not None and s_prev is not None) else None,
                     "margin_usage_pct": margin_raw.get("margin_usage_pct"),
                     "source": "twse_openapi",
                 }
         except Exception as e:
-            logger.warning("[TWSE OpenAPI] 获取台股个股筹码流动失败: %s", e)
-
-        # 2) 缺失部分（典型为上柜/OTC，TPEx OpenAPI 被重定向）回退 FinMind
-        if institutional is None or margin is None:
+            logger.warning("[TWSE/TPEx] 融资融券查询失败 %s: %s", stock_code, e)
+        if margin is None and fetcher is not None and hasattr(fetcher, "get_margin_flow"):
             try:
-                fetcher = self._get_fetcher_by_name("FinMindTwFetcher")
-                if fetcher is not None:
-                    if institutional is None and hasattr(fetcher, "get_institutional_net"):
-                        institutional = fetcher.get_institutional_net(stock_code)
-                    if margin is None and hasattr(fetcher, "get_margin_flow"):
-                        margin = fetcher.get_margin_flow(stock_code)
+                margin = fetcher.get_margin_flow(stock_code)
             except Exception as e:
-                logger.info("[FinMind] 台股个股筹码流动回退失败 %s: %s", stock_code, e)
+                logger.info("[FinMind] 融资融券后备查询失败 %s: %s", stock_code, e)
 
         if not institutional and not margin:
             return None

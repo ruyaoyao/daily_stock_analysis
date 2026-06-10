@@ -439,21 +439,27 @@ class TestGetInstitutionalInvestors:
         assert result is not None
         assert result["market"] == "TSE"
 
-    def test_otc_with_tpex_fixture(self):
-        """OTC 路径：能正确解析 TPEx list-of-dicts fixture。"""
-        with self._patch_get_json(_FIXTURE_TPEX_3INSTI):
+    def test_otc_with_tpex_csv_fixture(self):
+        """OTC 路径：解析 TPEx insti/dailyTrade CSV（24 欄；foreign=[10] trust=[13] dealer=[22] total=[23]）。"""
+        row = ["4958", "臨時電子",
+               "0", "0", "0", "0", "0", "0",      # 2-7
+               "0", "0", "-3000",                 # 8-10 外資(含自營)=[10]
+               "0", "0", "500",                   # 11-13 投信=[13]
+               "0", "0", "0", "0", "0", "0",      # 14-19
+               "0", "0", "-100",                  # 20-22 自營合計=[22]
+               "-2600"]                           # 23 三大法人合計
+        with patch.object(mod, "_fetch_tpex_otc_insti_map", return_value={"4958": row}):
             result = mod.get_institutional_investors("4958", market="OTC")
         assert result is not None
         assert result["market"] == "OTC"
-        assert isinstance(result["foreign_net"], int)
         assert result["foreign_net"] == -3000
         assert result["trust_net"] == 500
         assert result["dealer_net"] == -100
         assert result["total_net"] == -2600
 
     def test_otc_stock_not_found_returns_none(self):
-        """OTC fixture 中无此股票时返回 None。"""
-        with self._patch_get_json(_FIXTURE_TPEX_3INSTI):
+        """OTC CSV 中无此股票时返回 None。"""
+        with patch.object(mod, "_fetch_tpex_otc_insti_map", return_value={"4958": ["4958"] + ["0"] * 23}):
             result = mod.get_institutional_investors("0000", market="OTC")
         assert result is None
 
@@ -574,8 +580,9 @@ class TestGetMarginBalance:
         assert result is None
 
     def test_otc_with_tpex_fixture(self):
-        """OTC 路径：能正确解析 TPEx 融资融券 list-of-dicts fixture。"""
-        with self._patch_get_json(_FIXTURE_TPEX_MARGN):
+        """OTC 路径：www T+0 不可用时回退 openapi（list-of-dicts fixture）解析正确。"""
+        with patch.object(mod, "_get_tpex_www_json", return_value=None), \
+             self._patch_get_json(_FIXTURE_TPEX_MARGN):
             result = mod.get_margin_balance("4958", market="OTC")
 
         assert result is not None
@@ -588,8 +595,9 @@ class TestGetMarginBalance:
         assert result["short_balance"] == 120
 
     def test_otc_margin_usage_pct(self):
-        """OTC 融资使用率正确计算。"""
-        with self._patch_get_json(_FIXTURE_TPEX_MARGN):
+        """OTC 融资使用率正确计算（openapi 回退路径）。"""
+        with patch.object(mod, "_get_tpex_www_json", return_value=None), \
+             self._patch_get_json(_FIXTURE_TPEX_MARGN):
             result = mod.get_margin_balance("4958", market="OTC")
         assert result is not None
         assert result["margin_usage_pct"] is not None

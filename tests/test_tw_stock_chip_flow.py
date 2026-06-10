@@ -1,10 +1,25 @@
 # -*- coding: utf-8 -*-
-"""Tests for per-stock TW chip flow: 三大法人买卖超 + 融资融券 (twse_openapi TSE + FinMind OTC fallback)."""
+"""Tests for per-stock TW chip flow.
+
+Source priority (chosen for value-equal/T+0 sources): 三大法人 = FinMind first,
+official (T86/TPEx CSV) fallback; 融資融券 = official www T+0 first, FinMind fallback.
+"""
 
 from unittest.mock import patch
 
 from data_provider.base import DataFetcherManager
 from src.analyzer import GeminiAnalyzer
+
+
+class _FakeFinMind:
+    def __init__(self, inst=None, margin=None):
+        self._inst, self._margin = inst, margin
+
+    def get_institutional_net(self, code):
+        return self._inst
+
+    def get_margin_flow(self, code):
+        return self._margin
 
 
 # --- DataFetcherManager.get_tw_stock_chip_flow routing ---
@@ -14,54 +29,55 @@ def test_chip_flow_none_for_non_tw():
     assert DataFetcherManager().get_tw_stock_chip_flow("600519") is None
 
 
-def test_chip_flow_tse_via_twse_openapi_converts_shares_to_lots():
-    inst = {"date": "2026-06-08", "foreign_net": -20_464_649, "trust_net": 730_000,
-            "dealer_net": -214_367, "total_net": -19_949_016}
-    margin = {"date": None, "margin_balance": 27_603, "short_balance": None,
-              "margin_usage_pct": 0.43}
-    with patch("data_provider.twse_openapi.get_institutional_investors", return_value=inst), \
-         patch("data_provider.twse_openapi.get_margin_balance", return_value=margin):
-        out = DataFetcherManager().get_tw_stock_chip_flow("tw2330")
-    assert out is not None
+def test_chip_flow_institutional_prefers_finmind_margin_prefers_official():
+    fm_inst = {"date": "2026-06-10", "foreign_net_lots": -15543, "trust_net_lots": -4,
+               "dealer_net_lots": -731, "total_net_lots": -16278, "source": "finmind"}
+    # official margin (www T+0) carries prev -> change computed
+    off_margin = {"date": "2026-06-10", "margin_balance": 28168, "margin_prev": 28350,
+                  "short_balance": 0, "short_prev": 0, "margin_usage_pct": 0.43}
+    mgr = DataFetcherManager()
+    with patch.object(mgr, "_get_fetcher_by_name", return_value=_FakeFinMind(inst=fm_inst)), \
+         patch("data_provider.twse_openapi.get_margin_balance", return_value=off_margin):
+        out = mgr.get_tw_stock_chip_flow("tw2330")
+    assert out["institutional"]["source"] == "finmind"
+    assert out["institutional"]["total_net_lots"] == -16278
+    assert out["margin"]["source"] == "twse_openapi"
+    assert out["margin"]["margin_balance_lots"] == 28168
+    assert out["margin"]["margin_change_lots"] == 28168 - 28350   # -182, from prev
+
+
+def test_chip_flow_institutional_falls_back_to_official_when_finmind_none():
+    off_inst = {"date": "2026-06-10", "foreign_net": -20_464_649, "trust_net": 730_000,
+                "dealer_net": -214_367, "total_net": -19_949_016}
+    mgr = DataFetcherManager()
+    with patch.object(mgr, "_get_fetcher_by_name", return_value=_FakeFinMind(inst=None)), \
+         patch("data_provider.twse_openapi.get_institutional_investors", return_value=off_inst), \
+         patch("data_provider.twse_openapi.get_margin_balance", return_value=None):
+        out = mgr.get_tw_stock_chip_flow("tw2330")
     i = out["institutional"]
     assert i["source"] == "twse_openapi"
     assert i["foreign_net_lots"] == -20465      # 股 → 张 (round)
-    assert i["trust_net_lots"] == 730
     assert i["total_net_lots"] == -19949
-    assert out["margin"]["margin_balance_lots"] == 27603
-    assert out["margin"]["margin_change_lots"] is None  # openapi single-day has no prev
 
 
-def test_chip_flow_otc_falls_back_to_finmind():
-    # twse_openapi returns None for OTC (TPEx blocked) -> FinMind fallback used.
-    fm_inst = {"date": "2026-06-09", "foreign_net_lots": -379, "trust_net_lots": -79,
-               "dealer_net_lots": 293, "total_net_lots": -165, "source": "finmind"}
-    fm_margin = {"date": "2026-06-09", "margin_balance_lots": 8896, "margin_change_lots": -79,
-                 "short_balance_lots": 84, "short_change_lots": -3, "margin_usage_pct": 7.44,
+def test_chip_flow_margin_falls_back_to_finmind_when_official_none():
+    fm_margin = {"date": "2026-06-10", "margin_balance_lots": 8507, "margin_change_lots": -389,
+                 "short_balance_lots": 111, "short_change_lots": 0, "margin_usage_pct": 7.11,
                  "source": "finmind"}
-
-    class _FakeFinMind:
-        def get_institutional_net(self, code):
-            return fm_inst
-
-        def get_margin_flow(self, code):
-            return fm_margin
-
     mgr = DataFetcherManager()
-    with patch("data_provider.twse_openapi.get_institutional_investors", return_value=None), \
-         patch("data_provider.twse_openapi.get_margin_balance", return_value=None), \
-         patch.object(mgr, "_get_fetcher_by_name", return_value=_FakeFinMind()):
+    with patch.object(mgr, "_get_fetcher_by_name", return_value=_FakeFinMind(margin=fm_margin)), \
+         patch("data_provider.twse_openapi.get_institutional_investors", return_value=None), \
+         patch("data_provider.twse_openapi.get_margin_balance", return_value=None):
         out = mgr.get_tw_stock_chip_flow("tw6488")
-    assert out["institutional"]["source"] == "finmind"
-    assert out["institutional"]["total_net_lots"] == -165
-    assert out["margin"]["margin_change_lots"] == -79
+    assert out["margin"]["source"] == "finmind"
+    assert out["margin"]["margin_change_lots"] == -389
 
 
 def test_chip_flow_none_when_all_sources_empty():
     mgr = DataFetcherManager()
-    with patch("data_provider.twse_openapi.get_institutional_investors", return_value=None), \
-         patch("data_provider.twse_openapi.get_margin_balance", return_value=None), \
-         patch.object(mgr, "_get_fetcher_by_name", return_value=None):
+    with patch.object(mgr, "_get_fetcher_by_name", return_value=_FakeFinMind()), \
+         patch("data_provider.twse_openapi.get_institutional_investors", return_value=None), \
+         patch("data_provider.twse_openapi.get_margin_balance", return_value=None):
         assert mgr.get_tw_stock_chip_flow("tw6488") is None
 
 
