@@ -2303,6 +2303,48 @@ class GeminiAnalyzer:
             and getattr(config, "gemini_api_keys", None)
         )
 
+    @staticmethod
+    def _is_router_unavailable_error(exc: BaseException) -> bool:
+        message = str(exc).lower()
+        return (
+            "no deployments available" in message
+            or "cooldown_list" in message
+            or "try again in" in message
+        )
+
+    def _direct_litellm_completion_with_keys(
+        self,
+        model: str,
+        call_kwargs: Dict[str, Any],
+        *,
+        config: Config,
+    ) -> Any:
+        """Try direct litellm.completion() across all configured keys for a model."""
+        effective_kwargs = dict(call_kwargs)
+        keys = get_api_keys_for_model(model, config)
+        extra_params = extra_litellm_params(model, config)
+        candidates = keys or [effective_kwargs.get("api_key")]
+        last_error: Optional[Exception] = None
+
+        for api_key in candidates:
+            if not api_key:
+                continue
+            attempt_kwargs = dict(effective_kwargs)
+            attempt_kwargs["api_key"] = api_key
+            attempt_kwargs.update(extra_params)
+            try:
+                return litellm.completion(**attempt_kwargs)
+            except Exception as exc:
+                last_error = exc
+                logger.debug("[LiteLLM] direct key attempt failed for %s: %s", model, exc)
+
+        if last_error is not None:
+            raise last_error
+
+        attempt_kwargs = dict(effective_kwargs)
+        attempt_kwargs.update(extra_params)
+        return litellm.completion(**attempt_kwargs)
+
     def _dispatch_litellm_completion(
         self,
         model: str,
@@ -2322,16 +2364,27 @@ class GeminiAnalyzer:
         wire_models = resolve_fallback_litellm_wire_models(model, config.llm_model_list)
         register_fallback_model_pricing(wire_models)
         effective_kwargs = dict(call_kwargs)
-        if use_channel_router and self._router and model in router_model_names:
-            return self._router.completion(**effective_kwargs)
-        if self._router and model == config.litellm_model and not use_channel_router:
-            return self._router.completion(**effective_kwargs)
+        uses_router = (
+            (use_channel_router and self._router and model in router_model_names)
+            or (self._router and model == config.litellm_model and not use_channel_router)
+        )
+        if uses_router:
+            try:
+                return self._router.completion(**effective_kwargs)
+            except Exception as exc:
+                if not self._is_router_unavailable_error(exc):
+                    raise
+                logger.warning(
+                    "[LiteLLM] Router unavailable for %s, falling back to direct per-key calls: %s",
+                    model,
+                    exc,
+                )
 
-        keys = get_api_keys_for_model(model, config)
-        if keys:
-            effective_kwargs["api_key"] = keys[0]
-        effective_kwargs.update(extra_litellm_params(model, config))
-        return litellm.completion(**effective_kwargs)
+        return self._direct_litellm_completion_with_keys(
+            model,
+            effective_kwargs,
+            config=config,
+        )
 
     def _normalize_usage(self, usage_obj: Any) -> Dict[str, Any]:
         """Normalize usage objects from LiteLLM responses/chunks."""
@@ -2533,6 +2586,17 @@ class GeminiAnalyzer:
         requested_temperature = generation_config.get('temperature', 0.7)
 
         models_to_try = [config.litellm_model] + (config.litellm_fallback_models or [])
+        gemini_model_raw = str(getattr(config, "gemini_model", "") or "").strip()
+        if config.litellm_model.startswith("gemini/") and "," in gemini_model_raw:
+            extra_models = [
+                part.strip()
+                for part in gemini_model_raw.split(",")[1:]
+                if part.strip()
+            ]
+            for extra in extra_models:
+                normalized = extra if "/" in extra else f"gemini/{extra}"
+                if normalized not in models_to_try:
+                    models_to_try.append(normalized)
         models_to_try = [m for m in models_to_try if m]
 
         use_channel_router = self._has_channel_config(config)

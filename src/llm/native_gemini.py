@@ -39,15 +39,24 @@ _rr_lock = threading.Lock()
 _rr_index = 0
 
 
+def _uses_ai_studio_header_auth_keys(config: Any) -> bool:
+    """Return whether configured Gemini keys require header-based auth."""
+    keys = getattr(config, "gemini_api_keys", None) or []
+    return any(isinstance(key, str) and key.startswith("AQ.") for key in keys)
+
+
 def should_use_native_gemini(model: str, config: Any) -> bool:
     """Whether this call should be routed through the native Gemini client.
 
-    Only intercepts Google AI Studio models (``gemini/<model>``) when the
-    feature flag is enabled; everything else stays on LiteLLM.
+    Intercepts Google AI Studio models (``gemini/<model>``) when the feature
+    flag is enabled, or when keys use the newer ``AQ.`` header-auth format that
+    LiteLLM's ``?key=`` query-param path does not handle reliably.
     """
-    if not getattr(config, "native_gemini_enabled", False):
+    if not bool(model) or not model.strip().lower().startswith("gemini/"):
         return False
-    return bool(model) and model.strip().lower().startswith("gemini/")
+    if getattr(config, "native_gemini_enabled", False):
+        return True
+    return _uses_ai_studio_header_auth_keys(config)
 
 
 def _ordered_keys(config: Any) -> List[str]:

@@ -561,20 +561,51 @@ def split_comma_separated_litellm_models(
     return parts[0], deduped
 
 
-def _first_csv_model_name(raw: str) -> str:
-    """Return the first model name from a comma-separated env value."""
+def _split_csv_model_env(raw: str) -> Tuple[str, List[str]]:
+    """Split a comma-separated model env value into primary + extra entries."""
     value = (raw or "").strip()
     if not value:
-        return value
-    if "," not in value:
-        return value
+        return "", []
     parts = [part.strip() for part in value.split(",") if part.strip()]
-    if len(parts) > 1:
-        logger.warning(
-            "Comma-separated model env value detected; using first entry %s",
-            parts[0],
-        )
-    return parts[0] if parts else value
+    if len(parts) <= 1:
+        return (parts[0] if parts else value), []
+    logger.warning(
+        "Comma-separated model env value detected; using first entry %s",
+        parts[0],
+    )
+    return parts[0], parts[1:]
+
+
+def _first_csv_model_name(raw: str) -> str:
+    """Return the first model name from a comma-separated env value."""
+    primary, _extras = _split_csv_model_env(raw)
+    return primary
+
+
+def _prefixed_gemini_models(models: List[str]) -> List[str]:
+    """Normalize bare Gemini model names to ``gemini/<model>`` wire ids."""
+    normalized: List[str] = []
+    for model in models:
+        candidate = (model or "").strip()
+        if not candidate:
+            continue
+        if "/" not in candidate:
+            candidate = f"gemini/{candidate}"
+        normalized.append(candidate)
+    return normalized
+
+
+def _merge_unique_models(primary: str, extras: List[str]) -> List[str]:
+    """Return deduplicated model ids with ``primary`` preserved first when present."""
+    ordered: List[str] = []
+    seen = set()
+    for model in [primary, *extras]:
+        candidate = (model or "").strip()
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        ordered.append(candidate)
+    return ordered
 
 
 def normalize_agent_litellm_model(
@@ -1281,11 +1312,16 @@ class Config:
             _openai_model_name = _anspire_llm_model_env or _openai_model_env or ANSPIRE_LLM_MODEL_DEFAULT
         else:
             _openai_model_name = _openai_model_env or 'gpt-5.5'
+        _gemini_model_raw = os.getenv('GEMINI_MODEL', 'gemini-3.1-pro-preview')
+        _gemini_model_name, _gemini_model_extras = _split_csv_model_env(_gemini_model_raw)
         if not litellm_model:
-            _gemini_model_name = _first_csv_model_name(os.getenv('GEMINI_MODEL', 'gemini-3.1-pro-preview'))
             _anthropic_model_name = os.getenv('ANTHROPIC_MODEL', 'claude-sonnet-4-6').strip()
             if gemini_api_keys:
-                litellm_model = f'gemini/{_gemini_model_name}'
+                litellm_model = (
+                    _gemini_model_name
+                    if "/" in _gemini_model_name
+                    else f'gemini/{_gemini_model_name}'
+                )
             elif anthropic_api_keys:
                 litellm_model = f'anthropic/{_anthropic_model_name}'
             elif deepseek_api_keys:
@@ -1310,6 +1346,12 @@ class Config:
                 litellm_fallback_models = [_fb]
             else:
                 litellm_fallback_models = []
+
+        if litellm_model.startswith('gemini/') and _gemini_model_extras:
+            litellm_fallback_models = _merge_unique_models(
+                "",
+                _prefixed_gemini_models(_gemini_model_extras) + litellm_fallback_models,
+            )
 
         litellm_model, litellm_fallback_models = split_comma_separated_litellm_models(
             litellm_model,

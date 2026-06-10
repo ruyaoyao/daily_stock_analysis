@@ -47,6 +47,15 @@ class TestGating:
     def test_disabled_flag(self):
         assert ng.should_use_native_gemini("gemini/x", _cfg(enabled=False)) is False
 
+    def test_auto_enables_for_ai_studio_header_auth_keys(self):
+        # Dummy AQ.-prefixed value (not a real key); detection only checks the prefix.
+        cfg = _cfg(keys=("AQ.FAKE_ai_studio_header_auth_key_for_tests_only",), enabled=False)
+        assert ng.should_use_native_gemini("gemini/gemini-3.5-flash", cfg) is True
+
+    def test_legacy_keys_stay_on_litellm_without_flag(self):
+        cfg = _cfg(keys=("AIzaSyExampleLegacyKey1234567890",), enabled=False)
+        assert ng.should_use_native_gemini("gemini/gemini-3.5-flash", cfg) is False
+
 
 class TestBodyTranslation:
     def test_system_and_messages_mapped(self):

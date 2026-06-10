@@ -813,6 +813,7 @@ class GeminiKeyParsingTestCase(unittest.TestCase):
         with patch.dict(os.environ, env, clear=True):
             config = Config._load_from_env()
         self.assertEqual(config.litellm_model, "gemini/gemini-3.5-flash")
+        self.assertIn("gemini/gemini-2.5-flash", config.litellm_fallback_models)
 
 
 if __name__ == "__main__":
