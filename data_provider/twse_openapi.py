@@ -841,29 +841,45 @@ _TWSE_TAIEX_OHLC_URL = "https://openapi.twse.com.tw/v1/exchangeReport/MI_5MINS_H
 _TWSE_MIS_TAIEX_URL = (
     "https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_t00.tw&json=1&delay=0"
 )
+# RWD FMTQIK 含「当日」（openapi 镜像常滞后一日）；data 为 list-of-list：
+# [日期(ROC 115/06/10), 成交股数, 成交金额(元), 成交笔数, 加权指数, 涨跌点]
+_TWSE_FMTQIK_RWD_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/FMTQIK?response=json"
 
 
 def _roc_to_ad_yyyymmdd(roc: Any) -> Optional[str]:
-    """ROC 日期（如 '1150610'）转西元 'YYYYMMDD'；非 7 位数字返回 None。"""
-    s = str(roc or "").strip()
+    """ROC 日期（'1150610' 或 '115/06/10'）转西元 'YYYYMMDD'；非法返回 None。"""
+    s = str(roc or "").replace("/", "").replace("-", "").replace(".", "").strip()
     if len(s) == 7 and s.isdigit():
         return f"{int(s[:3]) + 1911}{s[3:]}"
     return None
 
 
 def _fmtqik_turnover_for_date(ad_date: Optional[str]) -> tuple[Optional[float], Optional[float]]:
-    """FMTQIK 最末一笔成交额(元)/量(股)，仅当其日期与 ad_date('YYYYMMDD') 相符时返回。
+    """全市场成交额(元)/量(股)，日期需与 ad_date('YYYYMMDD') 相符；不符返回 (None, None)。
 
-    ad_date 为 None 时不做日期校验（直接取最末一笔）。日期不符返回 (None, None)，
-    避免把上一交易日的成交额错贴到当日指数上。
+    优先 RWD FMTQIK（含「当日」），openapi 镜像常滞后一日时作回退。ad_date 为 None
+    时不校验（取最末一笔）。日期校验可避免把上一交易日成交额错贴到当日指数上。
     """
+    # 1) RWD（含当日）— data 为 list-of-list
+    rwd = _get_json(_TWSE_FMTQIK_RWD_URL)
+    if isinstance(rwd, dict):
+        rows = rwd.get("data")
+        if isinstance(rows, list) and rows:
+            for row in reversed(rows):
+                if not (isinstance(row, list) and len(row) >= 3):
+                    continue
+                if ad_date is None or _roc_to_ad_yyyymmdd(row[0]) == ad_date:
+                    return _safe_float(row[2]), _safe_float(row[1])  # 成交金额, 成交股数
+            if ad_date is not None:
+                # RWD 有资料但无相符日期 → 不再退回滞后的 openapi（避免误贴）
+                return None, None
+    # 2) 回退 openapi（list-of-dict，可能滞后一日）
     rows = _get_json(_TWSE_FMTQIK_URL)
-    if not isinstance(rows, list) or not rows:
-        return None, None
-    last = rows[-1] if isinstance(rows[-1], dict) else {}
-    if ad_date is not None and _roc_to_ad_yyyymmdd(last.get("Date")) != ad_date:
-        return None, None
-    return _safe_float(last.get("TradeValue")), _safe_float(last.get("TradeVolume"))
+    if isinstance(rows, list) and rows:
+        last = rows[-1] if isinstance(rows[-1], dict) else {}
+        if ad_date is None or _roc_to_ad_yyyymmdd(last.get("Date")) == ad_date:
+            return _safe_float(last.get("TradeValue")), _safe_float(last.get("TradeVolume"))
+    return None, None
 
 
 def _taiex_from_mis() -> Optional[dict]:
