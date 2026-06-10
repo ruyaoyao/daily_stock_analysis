@@ -238,7 +238,12 @@ class AnalysisService:
                 "risk_warning": result.risk_warning,
             }
         }
-        
+
+        # 台股个股筹码流动（三大法人买卖超 + 融资融券，张）— 仅台股有数据时附带，供前端结构化卡片
+        tw_chip_flow = getattr(result, "tw_chip_flow", None)
+        if isinstance(tw_chip_flow, dict) and (tw_chip_flow.get("institutional") or tw_chip_flow.get("margin")):
+            report["chip_flow"] = tw_chip_flow
+
         return {
             "query_id": query_id,
             "trace_id": trace_id,

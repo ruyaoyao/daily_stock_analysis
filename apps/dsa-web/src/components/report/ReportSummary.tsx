@@ -2,6 +2,7 @@ import React from 'react';
 import type { AnalysisResult, AnalysisReport } from '../../types/analysis';
 import { ReportOverview } from './ReportOverview';
 import { ReportStrategy } from './ReportStrategy';
+import { TwChipFlowCard } from './TwChipFlowCard';
 import { ReportNews } from './ReportNews';
 import { ReportDetails } from './ReportDetails';
 import { ReportDiagnostics } from './ReportDiagnostics';
@@ -36,7 +37,7 @@ export const ReportSummary: React.FC<ReportSummaryProps> = ({
   const recordId = report.meta.id;
   const diagnosticSummary = 'diagnosticSummary' in data ? data.diagnosticSummary : undefined;
 
-  const { meta, summary, strategy, details } = report;
+  const { meta, summary, strategy, details, chipFlow } = report;
   const reportLanguage = normalizeReportLanguage(meta.reportLanguage);
   const text = getReportText(reportLanguage);
   const modelUsed = (meta.modelUsed || '').trim();
@@ -67,6 +68,9 @@ export const ReportSummary: React.FC<ReportSummaryProps> = ({
 
       {/* 策略点位区 */}
       <ReportStrategy strategy={strategy} language={reportLanguage} />
+
+      {/* 台股个股筹码流动（三大法人 + 融资融券）— 仅台股有数据时显示 */}
+      <TwChipFlowCard chipFlow={chipFlow} language={reportLanguage} />
 
       {/* 资讯区 */}
       <ReportNews recordId={recordId} limit={8} language={reportLanguage} />

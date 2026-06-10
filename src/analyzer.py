@@ -1561,6 +1561,9 @@ class AnalysisResult:
     # ========== 基本面上下文（仅运行时，用于通知拼装；不持久化到 to_dict）==========
     fundamental_context: Optional[Dict[str, Any]] = None
 
+    # ========== 台股个股筹码流动（三大法人买卖超 + 融资融券；展示用，序列化给前端卡片）==========
+    tw_chip_flow: Optional[Dict[str, Any]] = None
+
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         return {
@@ -1599,6 +1602,7 @@ class AnalysisResult:
             'current_price': self.current_price,
             'change_pct': self.change_pct,
             'model_used': self.model_used,
+            'tw_chip_flow': self.tw_chip_flow,
         }
 
     def get_core_conclusion(self) -> str:

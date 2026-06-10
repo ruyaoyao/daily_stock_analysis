@@ -254,12 +254,40 @@ export interface ReportDetails {
   sectorRankings?: SectorRankings;
 }
 
+/** TW per-stock institutional net (三大法人买卖超, lots/张) */
+export interface TwInstitutionalFlow {
+  date?: string | null;
+  foreignNetLots?: number | null;
+  trustNetLots?: number | null;
+  dealerNetLots?: number | null;
+  totalNetLots?: number | null;
+  source?: string | null;
+}
+
+/** TW per-stock margin/short balance (融资融券余额, lots/张) */
+export interface TwMarginFlow {
+  date?: string | null;
+  marginBalanceLots?: number | null;
+  marginChangeLots?: number | null;
+  shortBalanceLots?: number | null;
+  shortChangeLots?: number | null;
+  marginUsagePct?: number | null;
+  source?: string | null;
+}
+
+/** TW per-stock chip flow (三大法人 + 融资融券), Taiwan stocks only */
+export interface TwChipFlow {
+  institutional?: TwInstitutionalFlow | null;
+  margin?: TwMarginFlow | null;
+}
+
 /** Full analysis report */
 export interface AnalysisReport {
   meta: ReportMeta;
   summary: ReportSummary;
   strategy?: ReportStrategy;
   details?: ReportDetails;
+  chipFlow?: TwChipFlow | null;
 }
 
 // ============ Analysis Result Types ============

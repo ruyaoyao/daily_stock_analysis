@@ -462,6 +462,7 @@ class StockAnalysisPipeline:
                     market_phase_context=market_phase_context_dict,
                     market_phase_summary=market_phase_summary,
                     portfolio_context=portfolio_context,
+                    tw_chip_flow=tw_chip_flow,
                 )
 
             # Step 4: 多维度情报搜索（最新消息+风险排查+业绩预期）
@@ -658,6 +659,8 @@ class StockAnalysisPipeline:
                     logger.info("[phase_decision_guardrail] Applied adjustments for %s: %s", code, adjustments)
                 if isinstance(fundamental_context, dict):
                     result.fundamental_context = fundamental_context
+                if tw_chip_flow:
+                    result.tw_chip_flow = tw_chip_flow
                 result.market_phase_summary = market_phase_summary
                 result.analysis_context_pack_overview = analysis_context_pack_overview
                 self._refresh_decision_action_for_final_result(
@@ -1011,6 +1014,7 @@ class StockAnalysisPipeline:
         market_phase_context: Optional[Dict[str, Any]] = None,
         market_phase_summary: Optional[Dict[str, Any]] = None,
         portfolio_context: Optional[Dict[str, Any]] = None,
+        tw_chip_flow: Optional[Dict[str, Any]] = None,
     ) -> Optional[AnalysisResult]:
         """
         使用 Agent 模式分析单只股票。
@@ -1176,6 +1180,8 @@ class StockAnalysisPipeline:
                     logger.info("[phase_decision_guardrail] Applied agent adjustments for %s: %s", code, adjustments)
                 if isinstance(fundamental_context, dict):
                     result.fundamental_context = fundamental_context
+                if tw_chip_flow:
+                    result.tw_chip_flow = tw_chip_flow
                 result.market_phase_summary = market_phase_summary
                 result.analysis_context_pack_overview = analysis_context_pack_overview
                 self._refresh_decision_action_for_final_result(
