@@ -9,7 +9,7 @@ N ?= 30
 SORT ?= margin_increase
 
 .DEFAULT_GOAL := help
-.PHONY: help install serve dev web analyze review margin schedule test gate web-test web-build lint clean
+.PHONY: help install serve dev web analyze review margin schedule test gate web-test web-build lint clean sync-upstream
 
 help: ## List available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -42,6 +42,9 @@ margin: ## TWSE 融資融券 Top N 排行 (make margin N=30 SORT=margin_increase
 
 schedule: ## Run the built-in scheduler (daily tasks)
 	$(PYTHON) main.py --schedule
+
+sync-upstream: ## 同步 fork 的 upstream(ZhuLinsen) 到 main（PUSH=1 推回 origin；STRATEGY=ff|merge|rebase）
+	./scripts/sync-upstream.sh $(if $(filter 1,$(PUSH)),--push,) $(if $(STRATEGY),--strategy $(STRATEGY),)
 
 test: ## Backend offline tests: pytest -m 'not network'
 	$(PYTHON) -m pytest -m "not network"
