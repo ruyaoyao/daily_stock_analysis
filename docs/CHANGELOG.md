@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 台股大盘复盘跨数据源「日期不一致」风险：原本加權指數/成交额已是当日（6/10），但漲跌家數（openapi `STOCK_DAY_ALL`）与类股涨跌（openapi `MI_INDEX`）走的是会滞后一日的 openapi 镜像，导致复盘可能把当日指数与前一交易日的漲跌家數/类股拼在一起、判断失真。改为优先 RWD `MI_INDEX(type=ALL)`（含「当日」漲跌證券數/大盤統計/類股指數，与指数/籌碼同步），RWD 不可用时才回退 openapi；`get_tw_market_stats()` 现返回 `trade_date`（回退路径亦标注），便于跨源日期一致性校验。修复后大盘复盘的指数/成交额/漲跌家數/类股/三大法人/融資融券均落在同一交易日。
+
 - [修复] 台股加權指數（TAIEX）涨跌幅错误：原用 yfinance `^TWII`，数据常缺当日/漏交易日且与官方收盘差距甚大（例：把 -3.31% 误显示为 -0.64%，甚至显示前一交易日 +2.76%）。改为优先 TWSE MIS 即时 API（`tse_t00.tw`，含「当日」OHLC + 昨收，与櫃買 TPEx 口径同步），MIS 不可用（如非台湾 IP）时回退 openapi 日线 `MI_5MINS_HIST`（权威但可能滞后一日），再回退 yfinance；成交额(億)优先取自 RWD `FMTQIK`（含「当日」，openapi 镜像常滞后一日），并按「日期相符」匹配，确保当日指数搭配当日成交额、不会把上一交易日成交额错贴到当日（仅当所有来源皆无相符日期时该列才为 N/A）。
 
 - [改进] 台股融资融券排行（`/tw-margin` 页面与 `GET /api/v1/tw-margin/ranking`）新增资料日期：响应增加 `trade_date`（取自 TWSE MI_MARGN 信用交易统计的权威日期，`get_tse_margin_trade_date()`），页面在单位说明旁显示「更新日期: YYYY-MM-DD」；来源不可用时为 null 不显示。单位说明同时标注更新时点：TWSE 融資融券餘額于交易日约 21:00（台北时间）盘后结算后更新，非交易日不更新（故盘中/当日 21:00 前显示的是上一交易日的已结算资料）。

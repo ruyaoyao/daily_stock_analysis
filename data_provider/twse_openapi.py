@@ -651,18 +651,93 @@ def get_margin_balance(
 _TWSE_FMTQIK_URL = "https://openapi.twse.com.tw/v1/exchangeReport/FMTQIK"
 _TWSE_MI_INDEX_URL = "https://openapi.twse.com.tw/v1/exchangeReport/MI_INDEX"
 _TWSE_STOCK_DAY_ALL_URL = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
+# RWD MI_INDEX(type=ALL) 含「当日」大盤統計/漲跌家數/類股指數（openapi 镜像常滞后一日）。
+_TWSE_MI_INDEX_RWD_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?response=json&type=ALL"
+
+_SECTOR_EXCLUDE = ("未含", "報酬", "加權", "寶島", "反向", "正向", "槓桿", "兩倍", "單日")
+
+
+def _strip_html(value: Any) -> str:
+    return re.sub(r"<[^>]+>", "", str(value or "")).strip()
+
+
+def _rwd_mi_index() -> Optional[dict]:
+    """RWD MI_INDEX(type=ALL)：含「当日」資料的 dict（tables/date）；非法返回 None。"""
+    data = _get_json(_TWSE_MI_INDEX_RWD_URL)
+    if isinstance(data, dict) and isinstance(data.get("tables"), list):
+        return data
+    return None
+
+
+def _rwd_find_table(tables: list, *keywords: str) -> Optional[dict]:
+    """按 title 关键词定位 table（位置无关，避免依赖 table 顺序）。"""
+    for t in tables or []:
+        title = str((t or {}).get("title") or "")
+        if title and all(k in title for k in keywords):
+            return t
+    return None
+
+
+def _parse_count_pair(cell: Any) -> tuple[Optional[int], int]:
+    """'259(14)' -> (259, 14)；'63' -> (63, 0)；不可解析 -> (None, 0)。"""
+    s = str(cell or "").replace(",", "").strip()
+    m = re.match(r"(\d+)\s*(?:\((\d+)\))?", s)
+    if not m:
+        return None, 0
+    return int(m.group(1)), int(m.group(2)) if m.group(2) else 0
+
+
+def _market_stats_from_rwd() -> Optional[dict]:
+    """大盤統計（漲跌家數/漲跌停 + 成交額億元 + 加權收盘/涨跌点 + trade_date），取自 RWD（当日）。"""
+    bundle = _rwd_mi_index()
+    if not bundle:
+        return None
+    ad_date = str(bundle.get("date") or "").strip() or None  # 已是西元 YYYYMMDD
+    stats: dict = {}
+
+    breadth_t = _rwd_find_table(bundle.get("tables"), "漲跌證券數")
+    if breadth_t:
+        by: dict = {}
+        for r in (breadth_t.get("data") or []):
+            if isinstance(r, list) and len(r) >= 3:
+                by[_strip_html(r[0])] = r[2]  # 取「股票」列（个股口径，排除权证/受益凭证）
+        up, lu = _parse_count_pair(by.get("上漲(漲停)"))
+        down, ld = _parse_count_pair(by.get("下跌(跌停)"))
+        flat, _ = _parse_count_pair(by.get("持平"))
+        if up is not None:
+            stats.update({
+                "up_count": up,
+                "down_count": down or 0,
+                "flat_count": flat or 0,
+                "limit_up_count": lu,
+                "limit_down_count": ld,
+            })
+
+    # 成交额：RWD FMTQIK 全市场总额（与 bundle 同为当日；日期相符才采用）
+    amount, _vol = _fmtqik_turnover_for_date(ad_date)
+    if amount is not None:
+        stats["total_amount"] = round(amount / 1e8, 2)
+
+    if not stats:
+        return None
+    if ad_date:
+        stats["trade_date"] = _format_date_yyyymmdd(ad_date)
+    return stats
 
 
 def get_tw_market_stats() -> Optional[dict]:
-    """TWSE（上市）大盤統計：漲跌家數 + 估算漲跌停家數 + 成交額(億元) + 加權指數。
+    """TWSE（上市）大盤統計：漲跌家數 + 漲跌停家數 + 成交額(億元)（含 trade_date）。
 
-    來源（均無需 Key）：
-      - STOCK_DAY_ALL：逐檔個股，依 Change 正負統計漲/跌/平；以漲跌幅≈±10% 估算漲跌停。
-      - FMTQIK：每日市場成交資訊，TradeValue=成交金額(元)、TAIEX=加權指數、Change=指數漲跌點。
-    任意來源失敗均優雅降級（預設對應欄位）；全部失敗返回 None。
+    優先 RWD MI_INDEX(type=ALL)（含「当日」漲跌證券數/大盤統計，与指數/籌碼同步）；
+    RWD 不可用時回退 openapi（STOCK_DAY_ALL 逐檔統計 + FMTQIK，**可能滞后一日**）。
+    回退路徑同時嘗試標注 trade_date（取自 FMTQIK 日期），以利上層做跨源日期一致性校验。
     """
-    stats: dict = {}
+    rwd = _market_stats_from_rwd()
+    if rwd:
+        return rwd
 
+    # 回退：openapi（可能滞后一日）
+    stats: dict = {}
     rows = _get_json(_TWSE_STOCK_DAY_ALL_URL)
     if isinstance(rows, list) and rows:
         up = down = flat = limit_up = limit_down = 0
@@ -687,15 +762,13 @@ def get_tw_market_stats() -> Optional[dict]:
                         limit_up += 1
                     elif pct <= -9.8:
                         limit_down += 1
-        stats.update(
-            {
-                "up_count": up,
-                "down_count": down,
-                "flat_count": flat,
-                "limit_up_count": limit_up,
-                "limit_down_count": limit_down,
-            }
-        )
+        stats.update({
+            "up_count": up,
+            "down_count": down,
+            "flat_count": flat,
+            "limit_up_count": limit_up,
+            "limit_down_count": limit_down,
+        })
 
     fmt = _get_json(_TWSE_FMTQIK_URL)
     if isinstance(fmt, list) and fmt:
@@ -709,45 +782,62 @@ def get_tw_market_stats() -> Optional[dict]:
         idx_change = _safe_float(last.get("Change"))
         if idx_change is not None:
             stats["index_change"] = idx_change
+        ad = _roc_to_ad_yyyymmdd(last.get("Date"))
+        if ad:
+            stats["trade_date"] = _format_date_yyyymmdd(ad)
 
     return stats or None
 
 
-def get_tw_sector_rankings(n: int = 5) -> Optional[tuple]:
-    """TWSE（上市）類股漲跌榜：自 MI_INDEX 取各『類指數』漲跌幅，排序取領漲/領跌各 n。
+def _sector_rankings_from_rows(named_pcts: list, n: int) -> Optional[tuple]:
+    """由 [(name, pct), ...] 构建 (top, bottom)；过滤产业类股、排除衍生指数。"""
+    sectors: list[dict] = []
+    for name, pct in named_pcts:
+        name = (name or "").strip()
+        if "類" not in name or any(x in name for x in _SECTOR_EXCLUDE):
+            continue
+        if pct is None:
+            continue
+        display = name.replace("類指數", "").replace("類", "") or name
+        sectors.append({"name": display, "change_pct": round(pct, 2)})
+    if not sectors:
+        return None
+    sectors.sort(key=lambda s: s["change_pct"], reverse=True)
+    return sectors[:n], list(reversed(sectors[-n:]))
 
-    返回 (top_sectors, bottom_sectors)，元素為 {'name','change_pct'}；失敗返回 None。
+
+def get_tw_sector_rankings(n: int = 5) -> Optional[tuple]:
+    """TWSE（上市）類股漲跌榜，取各『類指數』漲跌幅，排序取領漲/領跌各 n。
+
+    優先 RWD MI_INDEX(type=ALL) 價格指數表（含「当日」、漲跌百分比已带符号），
+    RWD 不可用時回退 openapi MI_INDEX（**可能滞后一日**）。返回 (top, bottom)；失败 None。
     """
+    bundle = _rwd_mi_index()
+    if bundle:
+        price_t = _rwd_find_table(bundle.get("tables"), "價格指數", "臺灣證券交易所")
+        if price_t:
+            named = []
+            for r in (price_t.get("data") or []):
+                if isinstance(r, list) and len(r) >= 5:
+                    named.append((_strip_html(r[0]), _safe_float(r[4])))  # 漲跌百分比(已带符号)
+            result = _sector_rankings_from_rows(named, n)
+            if result:
+                return result
+
+    # 回退：openapi MI_INDEX（可能滞后一日；漲跌百分比可能无符号，依漲跌列定号）
     rows = _get_json(_TWSE_MI_INDEX_URL)
     if not isinstance(rows, list) or not rows:
         return None
-
-    sectors: list[dict] = []
+    named = []
     for row in rows:
         if not isinstance(row, dict):
             continue
-        name = (row.get("指數") or "").strip()
-        # 僅保留產業類股指數，排除加權/未含/報酬等衍生指數
-        if "類" not in name or any(
-            x in name for x in ("未含", "報酬", "加權", "寶島", "反向", "正向", "槓桿", "兩倍", "單日")
-        ):
-            continue
         pct = _safe_float(row.get("漲跌百分比"))
-        if pct is None:
-            continue
         sign = (row.get("漲跌") or "").strip()
-        if sign in ("-", "－", "—") and pct > 0:  # 防禦：百分比若為無符號幅度則按漲跌列定號
+        if pct is not None and sign in ("-", "－", "—") and pct > 0:
             pct = -pct
-        display = name.replace("類指數", "").replace("類", "") or name
-        sectors.append({"name": display, "change_pct": round(pct, 2)})
-
-    if not sectors:
-        return None
-
-    sectors.sort(key=lambda s: s["change_pct"], reverse=True)
-    top = sectors[:n]
-    bottom = list(reversed(sectors[-n:]))
-    return top, bottom
+        named.append(((row.get("指數") or "").strip(), pct))
+    return _sector_rankings_from_rows(named, n)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
