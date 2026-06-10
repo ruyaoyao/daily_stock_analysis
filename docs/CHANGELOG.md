@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 台股加權指數（TAIEX）涨跌幅错误：原用 yfinance `^TWII`，数据常缺当日/漏交易日且与官方收盘差距甚大（例：把 -3.31% 误显示为 -0.64%，甚至显示前一交易日 +2.76%）。改为优先 TWSE MIS 即时 API（`tse_t00.tw`，含「当日」OHLC + 昨收，与櫃買 TPEx 口径同步），MIS 不可用（如非台湾 IP）时回退 openapi 日线 `MI_5MINS_HIST`（权威但可能滞后一日），再回退 yfinance；成交额取自 FMTQIK 且仅在「日期相符」时采用，避免把上一交易日成交额错贴到当日指数（FMTQIK 滞后时该列显示 N/A，待其更新后补上）。
+
 - [改进] 台股融资融券排行（`/tw-margin` 页面与 `GET /api/v1/tw-margin/ranking`）新增资料日期：响应增加 `trade_date`（取自 TWSE MI_MARGN 信用交易统计的权威日期，`get_tse_margin_trade_date()`），页面在单位说明旁显示「更新日期: YYYY-MM-DD」；来源不可用时为 null 不显示。单位说明同时标注更新时点：TWSE 融資融券餘額于交易日约 21:00（台北时间）盘后结算后更新，非交易日不更新（故盘中/当日 21:00 前显示的是上一交易日的已结算资料）。
 
 - [新功能] 个股分析报告新增「个股筹码流动」结构化卡片（台股）：在策略点位区下方展示三大法人买卖超（外资/投信/自营商/合计，张）与融资融券余额（含当日增减、融资使用率），台股涨红跌绿配色；数据经 `report.chip_flow` 下发（前端 `TwChipFlowCard`），仅台股有数据时显示，非台股不渲染。卡片在历史回看时同样保留（持久化于 `raw_result.tw_chip_flow`，经 `GET /api/v1/history/{id}` 的 `chip_flow` 字段下发）。

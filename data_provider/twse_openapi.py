@@ -830,6 +830,126 @@ def get_tw_otc_index() -> Optional[dict]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 加權指數（TAIEX）
+# yfinance ^TWII 数据常滞后/缺漏/失真（缺当日、与官方收盘差距甚大 → 涨跌幅错误）。
+# 优先 TWSE MIS 即时 API（含「当日」OHLC + 昨收，与櫃買 TPEx 口径同步）；
+# MIS 不可用（如非台湾 IP 被限）时回退 openapi 日线 MI_5MINS_HIST（权威但可能滞后一日）。
+# 成交额/量取自 FMTQIK，且仅在其日期与指数日期相符时采用（避免把昨日成交额贴到今日）。
+# ─────────────────────────────────────────────────────────────────────────────
+
+_TWSE_TAIEX_OHLC_URL = "https://openapi.twse.com.tw/v1/exchangeReport/MI_5MINS_HIST"
+_TWSE_MIS_TAIEX_URL = (
+    "https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_t00.tw&json=1&delay=0"
+)
+
+
+def _roc_to_ad_yyyymmdd(roc: Any) -> Optional[str]:
+    """ROC 日期（如 '1150610'）转西元 'YYYYMMDD'；非 7 位数字返回 None。"""
+    s = str(roc or "").strip()
+    if len(s) == 7 and s.isdigit():
+        return f"{int(s[:3]) + 1911}{s[3:]}"
+    return None
+
+
+def _fmtqik_turnover_for_date(ad_date: Optional[str]) -> tuple[Optional[float], Optional[float]]:
+    """FMTQIK 最末一笔成交额(元)/量(股)，仅当其日期与 ad_date('YYYYMMDD') 相符时返回。
+
+    ad_date 为 None 时不做日期校验（直接取最末一笔）。日期不符返回 (None, None)，
+    避免把上一交易日的成交额错贴到当日指数上。
+    """
+    rows = _get_json(_TWSE_FMTQIK_URL)
+    if not isinstance(rows, list) or not rows:
+        return None, None
+    last = rows[-1] if isinstance(rows[-1], dict) else {}
+    if ad_date is not None and _roc_to_ad_yyyymmdd(last.get("Date")) != ad_date:
+        return None, None
+    return _safe_float(last.get("TradeValue")), _safe_float(last.get("TradeVolume"))
+
+
+def _taiex_from_mis() -> Optional[dict]:
+    """加權指數当日行情，取自 TWSE MIS 即时 API（含 6/10 当日）。失败返回 None。"""
+    data = _get_json(_TWSE_MIS_TAIEX_URL)
+    if not isinstance(data, dict):
+        return None
+    arr = data.get("msgArray")
+    if not isinstance(arr, list) or not arr or not isinstance(arr[0], dict):
+        return None
+    a = arr[0]
+    close = _safe_float(a.get("z"))         # 最新/收盘指数
+    prev_close = _safe_float(a.get("y"))    # 昨收
+    if close is None or not prev_close:
+        return None
+    open_ = _safe_float(a.get("o")) or 0.0
+    high = _safe_float(a.get("h")) or 0.0
+    low = _safe_float(a.get("l")) or 0.0
+    ad_date = str(a.get("d") or "").strip() or None  # MIS 已是西元 YYYYMMDD
+    change = round(close - prev_close, 4)
+    amount, volume = _fmtqik_turnover_for_date(ad_date)
+    return {
+        "code": "TWII",
+        "name": "加權指數",
+        "current": close,
+        "change": change,
+        "change_pct": round(change / prev_close * 100, 4),
+        "open": open_,
+        "high": high,
+        "low": low,
+        "prev_close": prev_close,
+        "volume": volume or 0.0,
+        "amount": amount or 0.0,
+        "amplitude": round((high - low) / prev_close * 100, 4) if prev_close else 0.0,
+    }
+
+
+def _taiex_from_mi5mins_hist() -> Optional[dict]:
+    """加權指數行情，取自 openapi 日线 MI_5MINS_HIST（权威但可能滞后一日）。失败返回 None。"""
+    rows = _get_json(_TWSE_TAIEX_OHLC_URL)
+    if not isinstance(rows, list) or not rows:
+        return None
+    valid = [
+        r for r in rows
+        if isinstance(r, dict) and _safe_float(r.get("ClosingIndex")) is not None
+    ]
+    if len(valid) < 2:
+        return None
+    last, prev = valid[-1], valid[-2]
+    close = _safe_float(last.get("ClosingIndex"))
+    prev_close = _safe_float(prev.get("ClosingIndex"))
+    if close is None or not prev_close:
+        return None
+    open_ = _safe_float(last.get("OpeningIndex")) or 0.0
+    high = _safe_float(last.get("HighestIndex")) or 0.0
+    low = _safe_float(last.get("LowestIndex")) or 0.0
+    change = round(close - prev_close, 4)
+    ad_date = _roc_to_ad_yyyymmdd(last.get("Date"))
+    amount, volume = _fmtqik_turnover_for_date(ad_date)
+    return {
+        "code": "TWII",
+        "name": "加權指數",
+        "current": close,
+        "change": change,
+        "change_pct": round(change / prev_close * 100, 4),
+        "open": open_,
+        "high": high,
+        "low": low,
+        "prev_close": prev_close,
+        "volume": volume or 0.0,
+        "amount": amount or 0.0,
+        "amplitude": round((high - low) / prev_close * 100, 4) if prev_close else 0.0,
+    }
+
+
+def get_tw_taiex_index() -> Optional[dict]:
+    """加權指數（TAIEX）最新行情；返回与 yfinance 指数项同构的 dict。
+
+    优先 TWSE MIS 即时 API（含「当日」资料，与櫃買 TPEx 同步）；MIS 不可用时回退
+    openapi 日线 MI_5MINS_HIST。两者皆不可得返回 None（调用方可再回退 yfinance）。
+    字段: code/name/current/change/change_pct/open/high/low/prev_close/volume/amount/amplitude。
+    """
+    return _taiex_from_mis() or _taiex_from_mi5mins_hist()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 全市场融资增加 Top N 排行（上市 TSE）— TWSE MI_MARGN（无需 Key）
 # 单位：张（1 张 = 1000 股）。融資增加 = 融資今日餘額 - 融資前日餘額。
 # ─────────────────────────────────────────────────────────────────────────────
