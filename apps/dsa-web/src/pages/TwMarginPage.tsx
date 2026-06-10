@@ -37,6 +37,7 @@ export default function TwMarginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<ParsedApiError | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [tradeDate, setTradeDate] = useState<string | null>(null);
 
   useEffect(() => {
     document.title = text.documentTitle;
@@ -49,12 +50,14 @@ export default function TwMarginPage() {
     try {
       const resp = await twMarginApi.getRanking(Number(topN), sortBy);
       setRows(resp.ranking || []);
+      setTradeDate(resp.tradeDate ?? null);
       if (!resp.success) {
         setNotice(resp.error || text.emptyDescription);
       }
     } catch (err) {
       setError(getParsedApiError(err));
       setRows([]);
+      setTradeDate(null);
     } finally {
       setLoading(false);
     }
@@ -91,7 +94,10 @@ export default function TwMarginPage() {
             {loading ? text.refreshing : text.refresh}
           </Button>
         </div>
-        <p className="mt-2 text-xs text-muted-text">{text.unitNote}</p>
+        <p className="mt-2 text-xs text-muted-text">
+          {text.unitNote}
+          {tradeDate ? <span className="ml-2">· {text.updateDate}: {tradeDate}</span> : null}
+        </p>
       </Card>
 
       {error && <ApiErrorAlert error={error} />}

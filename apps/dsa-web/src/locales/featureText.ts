@@ -77,7 +77,7 @@ export const PORTFOLIO_CORPORATE_ACTION_LABELS: Record<UiLanguage, Record<Portfo
 export const TW_MARGIN_TEXT: Record<UiLanguage, {
   documentTitle: string; title: string; subtitle: string;
   sortLabel: string; sortMarginInc: string; sortMarginDec: string; sortShortInc: string;
-  topNLabel: string; refresh: string; refreshing: string; unitNote: string;
+  topNLabel: string; refresh: string; refreshing: string; unitNote: string; updateDate: string;
   loading: string; emptyTitle: string; emptyDescription: string;
   colRank: string; colCode: string; colName: string; colMarginChange: string;
   colMarginBalance: string; colShortChange: string; colShortRatio: string; colUsage: string;
@@ -90,6 +90,7 @@ export const TW_MARGIN_TEXT: Record<UiLanguage, {
     sortMarginInc: '融资增加', sortMarginDec: '融资减少', sortShortInc: '融券增加',
     topNLabel: '数量', refresh: '刷新', refreshing: '刷新中...',
     unitNote: '数据来自 TWSE 公开资料（盘后结算后更新）；单位：张（1 张 = 1000 股）。',
+    updateDate: '更新日期',
     loading: '正在加载排行...',
     emptyTitle: '暂无数据',
     emptyDescription: 'TWSE 融资融券资料暂不可用（可能盘后尚未结算或来源异常），稍后再试。',
@@ -104,6 +105,7 @@ export const TW_MARGIN_TEXT: Record<UiLanguage, {
     sortMarginInc: '融資增加', sortMarginDec: '融資減少', sortShortInc: '融券增加',
     topNLabel: '數量', refresh: '重新整理', refreshing: '重新整理中...',
     unitNote: '資料來自 TWSE 公開資料（盤後結算後更新）；單位：張（1 張 = 1000 股）。',
+    updateDate: '更新日期',
     loading: '正在載入排行...',
     emptyTitle: '暫無資料',
     emptyDescription: 'TWSE 融資融券資料暫不可用（可能盤後尚未結算或來源異常），稍後再試。',
@@ -118,6 +120,7 @@ export const TW_MARGIN_TEXT: Record<UiLanguage, {
     sortMarginInc: 'Margin increase', sortMarginDec: 'Margin decrease', sortShortInc: 'Short increase',
     topNLabel: 'Count', refresh: 'Refresh', refreshing: 'Refreshing...',
     unitNote: 'Data from TWSE open data (updates after post-market settlement); unit: 張 (1 lot = 1000 shares).',
+    updateDate: 'Updated',
     loading: 'Loading ranking...',
     emptyTitle: 'No data',
     emptyDescription: 'TWSE margin data is unavailable (post-market not settled yet or source error). Try again later.',

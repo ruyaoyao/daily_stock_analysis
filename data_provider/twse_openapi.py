@@ -1023,6 +1023,18 @@ def get_tw_margin_total() -> Optional[dict]:
     return result
 
 
+def get_tse_margin_trade_date() -> Optional[str]:
+    """上市融資融券資料的『資料日期』（YYYY-MM-DD），取自 MI_MARGN 信用交易統計表。
+
+    openapi 的 MI_MARGN（融資融券排行用）不含日期欄位，故另取 RWD MS 端點的權威日期。
+    失敗返回 None，不拋異常。
+    """
+    data = _get_json(_TWSE_MARGIN_SUMMARY_URL)
+    if isinstance(data, dict) and data.get("date"):
+        return _format_date_yyyymmdd(str(data.get("date")))
+    return None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 個股估值（本益比 / 股價淨值比 / 殖利率）— TWSE BWIBBU_ALL（上市，無需 Key）
 # 供個股分析補齊 PE/PB（台股實時快照來源 Shioaji 不含估值欄位）。

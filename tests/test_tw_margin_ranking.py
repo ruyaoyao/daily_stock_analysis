@@ -48,15 +48,28 @@ def test_ranking_none_on_fetch_failure():
         assert tw.get_tw_margin_ranking() is None
 
 
+def test_margin_trade_date_from_ms_endpoint():
+    payload = {"stat": "OK", "date": "20260609", "tables": [{"title": "信用交易統計"}]}
+    with patch.object(tw, "_get_json", return_value=payload):
+        assert tw.get_tse_margin_trade_date() == "2026-06-09"
+
+
+def test_margin_trade_date_none_on_failure():
+    with patch.object(tw, "_get_json", return_value=None):
+        assert tw.get_tse_margin_trade_date() is None
+
+
 # --- screener API endpoint ---
 
 def test_endpoint_returns_ranking_payload():
     from api.v1.endpoints import tw_margin as ep
     sample = [{"stock_code": "2303", "name": "聯電", "margin_change": 29514}]
-    with patch("data_provider.twse_openapi.get_tw_margin_ranking", return_value=sample):
+    with patch("data_provider.twse_openapi.get_tw_margin_ranking", return_value=sample), \
+         patch("data_provider.twse_openapi.get_tse_margin_trade_date", return_value="2026-06-09"):
         out = ep.tw_margin_ranking(top_n=5, sort_by="margin_increase")
     assert out["success"] is True
     assert out["market"] == "tw" and out["unit"] == "張"
+    assert out["trade_date"] == "2026-06-09"
     assert out["count"] == 1 and out["ranking"][0]["stock_code"] == "2303"
 
 

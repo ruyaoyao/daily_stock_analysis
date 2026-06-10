@@ -34,7 +34,10 @@ def tw_margin_ranking(
             400, "invalid_sort_by", f"sort_by 必须是 {list(_VALID_SORTS)} 之一"
         )
 
-    from data_provider.twse_openapi import get_tw_margin_ranking as _ranking
+    from data_provider.twse_openapi import (
+        get_tse_margin_trade_date,
+        get_tw_margin_ranking as _ranking,
+    )
 
     rows = _ranking(top_n, sort_by=sort_by)
     if rows is None:
@@ -50,6 +53,7 @@ def tw_margin_ranking(
         "market": "tw",
         "unit": "張",
         "sort_by": sort_by,
+        "trade_date": get_tse_margin_trade_date(),  # 資料日期（YYYY-MM-DD），來源不可用時為 None
         "count": len(rows),
         "ranking": rows,
     }

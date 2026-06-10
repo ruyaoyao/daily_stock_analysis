@@ -22,6 +22,8 @@ export interface TwMarginRankingResponse {
   market?: string;
   unit?: string;
   sortBy: TwMarginSortBy;
+  /** 资料日期（YYYY-MM-DD），来源不可用时为 null */
+  tradeDate?: string | null;
   count: number;
   ranking: TwMarginRow[];
   error?: string;
