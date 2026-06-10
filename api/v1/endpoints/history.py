@@ -474,11 +474,17 @@ def get_history_detail(
             sector_rankings=extracted_boards.get("sector_rankings"),
         )
         
+        # 台股个股筹码流动（持久化于 raw_result.tw_chip_flow）— 让卡片在历史回看时也保留
+        tw_chip_flow = raw_result.get("tw_chip_flow")
+        if not (isinstance(tw_chip_flow, dict) and (tw_chip_flow.get("institutional") or tw_chip_flow.get("margin"))):
+            tw_chip_flow = None
+
         return AnalysisReport(
             meta=meta,
             summary=summary,
             strategy=strategy,
-            details=details
+            details=details,
+            chip_flow=tw_chip_flow,
         )
         
     except HTTPException:

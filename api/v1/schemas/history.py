@@ -269,6 +269,10 @@ class AnalysisReport(BaseModel):
     summary: ReportSummary = Field(..., description="概览区")
     strategy: Optional[ReportStrategy] = Field(None, description="策略点位区")
     details: Optional[ReportDetails] = Field(None, description="详情区")
+    chip_flow: Optional[Any] = Field(
+        None,
+        description="台股个股筹码流动（三大法人买卖超 + 融资融券余额，张）；仅台股有数据",
+    )
 
     model_config = ConfigDict(json_schema_extra={
         "example": {
