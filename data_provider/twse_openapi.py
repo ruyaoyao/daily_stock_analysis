@@ -916,6 +916,7 @@ def get_tw_otc_index() -> Optional[dict]:
         "volume": volume or 0.0,
         "amount": amount or 0.0,
         "amplitude": round(amplitude, 4),
+        "trade_date": _format_date_yyyymmdd(str(last.get("Date"))) if last.get("Date") else None,
     }
 
 
@@ -1004,6 +1005,7 @@ def _taiex_from_mis() -> Optional[dict]:
         "volume": volume or 0.0,
         "amount": amount or 0.0,
         "amplitude": round((high - low) / prev_close * 100, 4) if prev_close else 0.0,
+        "trade_date": _format_date_yyyymmdd(ad_date) if ad_date else None,
     }
 
 
@@ -1042,6 +1044,7 @@ def _taiex_from_mi5mins_hist() -> Optional[dict]:
         "volume": volume or 0.0,
         "amount": amount or 0.0,
         "amplitude": round((high - low) / prev_close * 100, 4) if prev_close else 0.0,
+        "trade_date": _format_date_yyyymmdd(ad_date) if ad_date else None,
     }
 
 

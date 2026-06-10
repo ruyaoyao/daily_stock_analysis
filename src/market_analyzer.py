@@ -128,6 +128,11 @@ class MarketOverview:
     # 結構：{'institutional': {...} | None, 'margin': {...} | None}
     chip_stats: Optional[Dict[str, Any]] = None
 
+    # 跨數據源日期一致性（防止把不同交易日的指數/家數/籌碼拼在一起導致判斷失真）
+    trade_date: Optional[str] = None                 # 本次覆盤錨定的交易日（YYYY-MM-DD）
+    source_dates: Dict[str, str] = field(default_factory=dict)  # 各來源各自的資料日期
+    data_date_inconsistent: bool = False             # 來源日期出現分歧時為 True
+
 
 @dataclass
 class MarketLightReviewResult:
@@ -206,7 +211,22 @@ class MarketAnalyzer:
             return "USD bn" if self._get_review_language() == "en" else "十億美元"
         if self.region == "hk":
             return "HKD bn" if self._get_review_language() == "en" else "十億港元"
+        if self.region == "tw":
+            return "TWD 100m" if self._get_review_language() == "en" else "億"
         return "CNY 100m" if self._get_review_language() == "en" else "億"
+
+    def _get_turnover_total_label(self) -> str:
+        """Region-aware label for the market-wide turnover line.
+
+        A 股是「兩市」(滬深)；台股此值為上市(TWSE)口径，櫃買(上櫃)另列于指數表，故标
+        「上市成交額」以免误读为全市場；港/美用泛称。
+        """
+        review_language = self._get_review_language()
+        if self.region == "tw":
+            return "TWSE turnover" if review_language == "en" else "上市成交額"
+        if self.region in ("us", "hk"):
+            return "Turnover" if review_language == "en" else "成交額"
+        return "Turnover" if review_language == "en" else "兩市成交額"
 
     def _format_turnover_value(self, amount_raw: float) -> str:
         """Format raw turnover according to market-specific units."""
@@ -370,7 +390,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         overview = MarketOverview(date=today)
 
         # 1. 獲取主要指數行情（按 region 切換 A 股/美股）
-        overview.indices = self._get_main_indices()
+        overview.indices = self._get_main_indices(overview)
 
         # 2. 獲取漲跌統計（A 股有，美股無等效數據）
         if self.profile.has_market_stats:
@@ -384,13 +404,60 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         if self.profile.has_chip_stats:
             self._get_chip_statistics(overview)
 
-        # 5. 獲取北向資金（可選）
+        # 5. 跨數據源日期一致性校驗（防止把不同交易日的資料拼在一起判斷）
+        self._resolve_trade_date_consistency(overview)
+
+        # 6. 獲取北向資金（可選）
         # self._get_north_flow(overview)
 
         return overview
 
+    def _resolve_trade_date_consistency(self, overview: MarketOverview) -> None:
+        """錨定本次覆盤的交易日並校驗各來源日期是否一致。
 
-    def _get_main_indices(self) -> List[MarketIndex]:
+        以指數日期為錨（最權威的當日來源），無則取多數；任一來源日期與錨不同即標記
+        ``data_date_inconsistent`` 並記錄日誌，供 prompt 注明、避免 LLM 把跨日資料混判。
+        """
+        dates = {k: v for k, v in (overview.source_dates or {}).items() if v}
+        if not dates:
+            return
+        anchor = dates.get("index") or max(set(dates.values()), key=lambda d: list(dates.values()).count(d))
+        overview.trade_date = anchor
+        divergent = {k: v for k, v in dates.items() if v != anchor}
+        if divergent:
+            overview.data_date_inconsistent = True
+            logger.warning(
+                "[大盘] %s action=date_consistency status=DIVERGENT anchor=%s divergent=%s",
+                self._log_context(), anchor, divergent,
+            )
+        else:
+            logger.info(
+                "[大盘] %s action=date_consistency status=ok trade_date=%s sources=%s",
+                self._log_context(), anchor, sorted(dates),
+            )
+
+    def _build_data_date_note(self, overview: MarketOverview) -> str:
+        """資料日期行（含跨源不一致時的告警），供 prompt 注明，避免 LLM 混判跨日資料。"""
+        if not getattr(overview, "trade_date", None):
+            return ""
+        en = self._get_review_language() == "en"
+        if not overview.data_date_inconsistent:
+            return (f"Data date: {overview.trade_date}" if en
+                    else f"資料日期：{overview.trade_date}")
+        # 来源日期分歧：列出各来源日期并要求按各自日期解读
+        detail = "、".join(f"{k}={v}" for k, v in sorted(overview.source_dates.items()))
+        if en:
+            return (
+                f"Data date: {overview.trade_date} — WARNING: sources span different "
+                f"sessions ({detail}). Judge each block by its own date; do not conflate."
+            )
+        return (
+            f"⚠️ 資料日期不一致：以 {overview.trade_date} 為主，各來源（{detail}）。"
+            f"請按各來源各自日期解讀，切勿把不同交易日的指數/漲跌家數/籌碼混為一日判斷。"
+        )
+
+
+    def _get_main_indices(self, overview: Optional["MarketOverview"] = None) -> List[MarketIndex]:
         """獲取主要指數實時行情"""
         indices = []
 
@@ -402,6 +469,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             data_list = self.data_manager.get_main_indices(region=self.region)
 
             if data_list:
+                anchor_date = None
                 for item in data_list:
                     index = MarketIndex(
                         code=item['code'],
@@ -418,6 +486,12 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                         amplitude=item['amplitude']
                     )
                     indices.append(index)
+                    # 锚定指数（mood index，如台股加權 TWII）的资料日期，供跨源一致性校验
+                    td = item.get('trade_date')
+                    if td and (anchor_date is None or item.get('code') == self.profile.mood_index_code):
+                        anchor_date = td
+                if overview is not None and anchor_date:
+                    overview.source_dates['index'] = anchor_date
 
             if not indices:
                 logger.warning("[大盘] %s action=get_main_indices status=empty", self._log_context())
@@ -449,6 +523,8 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                 overview.limit_up_count = stats.get('limit_up_count', 0)
                 overview.limit_down_count = stats.get('limit_down_count', 0)
                 overview.total_amount = stats.get('total_amount', 0.0)
+                if stats.get('trade_date'):
+                    overview.source_dates['breadth'] = stats['trade_date']
 
                 logger.info(
                     "[大盘] %s action=get_market_stats status=success up=%s down=%s flat=%s "
@@ -503,6 +579,10 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                 overview.chip_stats = chip
                 inst = chip.get("institutional") or {}
                 margin = chip.get("margin") or {}
+                if inst.get("trade_date"):
+                    overview.source_dates['institutional'] = inst['trade_date']
+                if margin.get("trade_date"):
+                    overview.source_dates['margin'] = margin['trade_date']
                 logger.info(
                     "[大盘] %s action=get_chip_stats status=success foreign=%s trust=%s dealer=%s "
                     "margin_yi=%s short_lots=%s",
@@ -914,7 +994,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             "|------|------|------|",
             f"| 上漲/下跌/平盤 | {overview.up_count} / {overview.down_count} / {overview.flat_count} | 上漲占比(不含平盤) {up_ratio:.1%} |",
             f"| 漲停/跌停 | {overview.limit_up_count} / {overview.limit_down_count} | 漲跌停差 {limit_spread:+d} |",
-            f"| 兩市成交額 | {overview.total_amount:.0f} 億 | {self._describe_turnover(overview.total_amount)} |",
+            f"| {self._get_turnover_total_label()} | {overview.total_amount:.0f} 億 | {self._describe_turnover(overview.total_amount)} |",
         ]
         return "\n".join(lines)
 
@@ -1218,15 +1298,17 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
     def _escape_markdown_link_label(value: str) -> str:
         return value.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
 
-    @staticmethod
-    def _describe_turnover(total_amount: float) -> str:
-        if total_amount >= 15000:
+    def _describe_turnover(self, total_amount: float) -> str:
+        """活躍度定性，门槛按市场口径区分（A股兩市 vs 台股上市，量级差异大）。"""
+        if total_amount <= 0:
+            return "暫無數據"
+        # 台股上市口径（億元）；A股兩市门槛量级不同，沿用原值。
+        high, mid = (12000, 6000) if self.region == "tw" else (15000, 9000)
+        if total_amount >= high:
             return "高活躍度"
-        if total_amount >= 9000:
+        if total_amount >= mid:
             return "中等活躍"
-        if total_amount > 0:
-            return "縮量觀望"
-        return "暫無數據"
+        return "縮量觀望"
 
     def _build_market_light_scores(self, overview: MarketOverview) -> Dict[str, Any]:
         """Build the canonical Market Light scores used by reports and alerts."""
@@ -1346,7 +1428,7 @@ Lagging: {bottom_sectors_text if bottom_sectors_text else "N/A"}"""
                 stats_block = f"""## 市場概況
 - 上漲: {overview.up_count} 家 | 下跌: {overview.down_count} 家 | 平盤: {overview.flat_count} 家
 - 漲停: {overview.limit_up_count} 家 | 跌停: {overview.limit_down_count} 家
-- 兩市成交額: {overview.total_amount:.0f} 億元"""
+- {self._get_turnover_total_label()}: {overview.total_amount:.0f} 億元"""
             else:
                 stats_block = "## 市場概況\n（該市場暫無漲跌家數等統計）"
 
@@ -1359,6 +1441,9 @@ Lagging: {bottom_sectors_text if bottom_sectors_text else "N/A"}"""
 
         # 籌碼面（三大法人 + 融資融券；目前僅台股有數據，其餘市場為空字串不注入）
         chip_block = self._build_chip_block(overview)
+
+        # 跨來源資料日期一致性提示（避免把不同交易日的指數/家數/籌碼混判）
+        data_date_note = self._build_data_date_note(overview)
 
         data_no_indices_hint = (
             "注意：由於行情數據獲取失敗，請主要根據【市場新聞】進行定性分析和總結，不要編造具體的指數點位。"
@@ -1394,7 +1479,7 @@ Lagging: {bottom_sectors_text if bottom_sectors_text else "N/A"}"""
 
 ## Date
 {overview.date}
-
+{data_date_note}
 ## Major Indices
 {indices_placeholder}
 
@@ -1460,7 +1545,7 @@ Output the report content directly, no extra commentary.
 
 ## 日期
 {overview.date}
-
+{data_date_note}
 ## 主要指數
 {indices_placeholder}
 
