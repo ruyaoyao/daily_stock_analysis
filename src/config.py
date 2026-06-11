@@ -804,6 +804,7 @@ class Config:
     searxng_public_instances_enabled: bool = True  # Auto-discover public SearXNG instances when base URLs are absent
     tw_rss_news_enabled: bool = True  # Taiwan finance RSS news source (free, no API key)
     market_intl_context_enabled: bool = True  # 大盘复盘国际情势背景（SOX/DXY/VIX/美债10Y，走 yfinance，免 key）
+    premarket_outlook_enabled: bool = False  # 台股大盘复盘「盘前展望」（台指期夜盘 via Shioaji + 美股盘后），opt-in
     tw_rss_feed_urls: List[str] = field(default_factory=list)  # Override Taiwan RSS feeds (empty = built-in defaults)
     tw_rss_google_news_enabled: bool = True  # Google News RSS for Taiwan stock queries
     tw_rss_finmind_news_enabled: bool = True  # FinMind TaiwanStockNews for Taiwan stock queries
@@ -1496,6 +1497,12 @@ class Config:
             os.getenv('MARKET_INTL_CONTEXT_ENABLED'),
             default=True,
         )
+
+        # 台股大盘复盘「盘前展望」（台指期夜盘 via Shioaji + 美股盘后）：opt-in，默认关闭
+        premarket_outlook_enabled = parse_env_bool(
+            os.getenv('PREMARKET_OUTLOOK_ENABLED'),
+            default=False,
+        )
         _raw_tw_rss_urls = [
             u.strip() for u in os.getenv('TW_RSS_FEED_URLS', '').split(',') if u.strip()
         ]
@@ -1669,6 +1676,7 @@ class Config:
             searxng_public_instances_enabled=searxng_public_instances_enabled,
             tw_rss_news_enabled=tw_rss_news_enabled,
             market_intl_context_enabled=market_intl_context_enabled,
+            premarket_outlook_enabled=premarket_outlook_enabled,
             tw_rss_feed_urls=tw_rss_feed_urls,
             tw_rss_google_news_enabled=tw_rss_google_news_enabled,
             tw_rss_finmind_news_enabled=tw_rss_finmind_news_enabled,

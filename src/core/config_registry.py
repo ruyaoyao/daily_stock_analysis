@@ -828,6 +828,32 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         ],
         "warning_codes": [],
     },
+    "PREMARKET_OUTLOOK_ENABLED": {
+        "title": "Premarket Outlook (TW)",
+        "description": "Enable the '盤前展望' block in Taiwan market reviews: TAIFEX TX night-session futures (via Shioaji) + US-session backdrop, as an overnight pre-open guide. Opt-in (needs Shioaji + futures permission); degrades gracefully to US-session-only when night futures are unavailable. Per-stock analysis is unaffected. Default: false.",
+        "category": "data_source",
+        "data_type": "boolean",
+        "ui_control": "switch",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "false",
+        "options": [],
+        "validation": {},
+        "display_order": 57,
+        "help_key": "settings.data_source.search_api_keys",
+        "examples": [
+            "PREMARKET_OUTLOOK_ENABLED=true",
+            "PREMARKET_OUTLOOK_ENABLED=false",
+        ],
+        "docs": [
+            {
+                "label": "盤前展望模組計畫",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/premarket-outlook-plan.md",
+            },
+        ],
+        "warning_codes": [],
+    },
     "TW_RSS_FEED_URLS": {
         "title": "Taiwan RSS Feed URLs",
         "description": "Comma-separated RSS feed URLs that override the built-in Taiwan finance feeds. Leave empty to use the defaults (Yahoo 股市 / 中央社 / 鉅亨网).",

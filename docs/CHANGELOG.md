@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] 台股大盘复盘新增「盘前展望」段（opt-in，`PREMARKET_OUTLOOK_ENABLED`，默认关闭）：台指期（TXF）夜盘（via Shioaji，需期货权限）+ 美股盘后（复用国际背景 SOX/SPX/Nasdaq/VIX）+ 台积电 ADR（TSM）溢/折价（隔夜 gap 信号，走 yfinance），并合成开盘前定调（偏多/偏空/中性 + 透明依据）。注入复盘报告顶部、仅台股、不对个股注入，且**限盘前时段**（盘中/盘后不挂）。取不到夜盘（无 Shioaji/无期货权限/快照失败）自动降级为「美股盘后 + ADR」并标注，全失败则不注入，均不影响主流程。资料标注为隔夜/前一交易日盘后，避免与当日资料混判。
+- [chore] 新增 `scripts/diagnose_shioaji_futures.py`：诊断 Shioaji 台指期（TXF）夜盘行情是否可取（凭证/登录/期货权限/快照逐段拆解），供「盘前展望」自检。
+- [文档] 新增 `docs/GLOBAL_MACRO_BACKDROP_SPEC.md`（国际情势背景 4 指标 SOX/DXY/VIX/US10Y 的演算法、来源、筛选实证与可携参考实作）与 `docs/premarket-outlook-plan.md`（「盘前展望」台指期夜盘 via Shioaji 模组的 scope/计画草案）。
 - [新功能] 大盘复盘新增「国际情势/宏观背景」区块：SOX（费半）/DXY（美元）/VIX/美债10Y 风险指标，走 yfinance（免 key、T+0），作为 risk-on/off 定调背景。全市场通用、仅大盘层级（个股不注入，避免逐档成本与过度归因），完全 fail-safe（单一指标或整块失败均不影响复盘）。新增开关 `MARKET_INTL_CONTEXT_ENABLED`（默认 true）。评估后不采用第三方 AI 二手情报站（无 API/RSS、可溯源性与 ToS 不明）。
 - [改进] 台股个股「筹码流动」改用权威 T+0 来源并定主备：三大法人以 FinMind 为主（约 150ms、值与官方一致）、官方 TWSE T86 / TPEx `insti/dailyTrade` CSV 为备（权威）；融资融券以官方 www T+0 为主（TWSE `MI_MARGN` / TPEx `margin/balance`，约 70-120ms、既权威又最快、含当日增减），FinMind 为备。新增 `_get_tpex_www_json`（处理 TPEx 凭证缺 SKI 的 SSL 重试、stat 不分大小写）；上柜三大法人改走官方 CSV（取代被 302 的 openapi）；融资融券改走 www T+0（取代 T+1、无日期的 openapi）。实测 4 象限值/日期一致＝当日；端到端每档 ~0.4-0.9s。
 - [修复] 台股个股三大法人/融资融券「永远取不到当日」：`_recent_trading_days()` 原从「昨天」起算，导致 T86/MI_MARGN 等盘后当日资料发布后仍取前一交易日；改为从「今天」起算（发布前自动回退），并加回归测试锁定。

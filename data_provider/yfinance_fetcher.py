@@ -399,6 +399,44 @@ class YfinanceFetcher(BaseFetcher):
             return results
         return None
 
+    def get_tsmc_adr_premium(self) -> Optional[Dict[str, Any]]:
+        """台積電 ADR（TSM）相對 2330 普通股的溢/折價,作為開盤前的隔夜 gap 訊號。
+
+        1 ADR = 5 普通股;implied_2330(TWD) = TSM_USD × USDTWD / 5;
+        premium% = implied / 2330_prev_close − 1（正＝ADR 溢價,偏多 gap）。
+        三隻腳（TSM / TWD=X / 2330.TW）任一缺失回 None。皆走 yfinance,免 key,
+        無 Shioaji 也可用。
+        """
+        import yfinance as yf
+
+        ADR_RATIO = 5  # 1 TSM ADR = 5 股 2330
+        try:
+            adr = self._fetch_yf_ticker_data(yf, "TSM", "台積電ADR", "TSM")
+            fx = self._fetch_yf_ticker_data(yf, "TWD=X", "美元兌台幣", "USDTWD")
+            twn = self._fetch_yf_ticker_data(yf, "2330.TW", "台積電", "2330")
+        except Exception as e:
+            logger.warning(f"[Yfinance] 取台積電 ADR 溢價失敗: {e}")
+            return None
+
+        if not (adr and fx and twn):
+            return None
+        adr_usd = adr.get("current")
+        usdtwd = fx.get("current")
+        tw_close = twn.get("current")
+        if not (adr_usd and usdtwd and tw_close):
+            return None
+        implied = adr_usd * usdtwd / ADR_RATIO
+        premium_pct = (implied / tw_close - 1) * 100 if tw_close else None
+        return {
+            "adr_usd": round(adr_usd, 2),
+            "adr_change_pct": adr.get("change_pct"),
+            "usdtwd": round(usdtwd, 4),
+            "tw2330_close": round(tw_close, 2),
+            "implied_twd": round(implied, 2),
+            "premium_pct": round(premium_pct, 2) if premium_pct is not None else None,
+            "source": "yfinance",
+        }
+
     def _get_us_main_indices(self, yf) -> Optional[List[Dict[str, Any]]]:
         """獲取美股主要指數行情（SPX、IXIC、DJI、VIX），復用 _fetch_yf_ticker_data"""
         # 大盤復盤所需核心美股指數

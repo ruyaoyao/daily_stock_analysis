@@ -80,6 +80,7 @@ pip install shioaji          # 已加入 requirements.txt
 | 融資融券 | 融資融券餘額 | 官方 www T+0 優先（TWSE `MI_MARGN` / TPEx `margin/balance`）→ FinMind 兜底 |
 | 大盤指數 | 加權指數 ^TWII、櫃買指數 ^TWOII | yfinance |
 | 大盤國際情勢 / 宏觀背景 | SOX / DXY / VIX / 美債10Y | yfinance（免 key，見下「國際情勢」一節） |
+| 大盤盤前展望（台股，opt-in） | 台指期夜盤 + 美股盤後 | Shioaji（夜盤，需期貨權限）+ yfinance（降級版，見下「盤前展望」一節） |
 
 ### 上市（TSE）vs 上櫃（OTC）
 
@@ -126,6 +127,21 @@ pip install shioaji          # 已加入 requirements.txt
 | `MARKET_INTL_CONTEXT_ENABLED` | `true` | 是否在大盤復盤注入國際情勢 / 宏觀背景區塊;設為 `false` 關閉 |
 
 > 說明:本專案曾評估第三方財經情報站(如 iux24)作為國際情勢來源,因其為 AI 二手摘要、無 API/RSS、可溯源性與 ToS 不明而**不採用**;改以可程式化、可溯源、免 key 的結構化指標(yfinance)為主來源。
+
+### 盤前展望(台股大盤,opt-in)
+
+台股大盤復盤可選注入一段「盤前展望」,作為**開盤前的隔夜前瞻**(「美股盤後 / 台指期夜盤 → 今日台股開盤」):
+
+- 訊號:**台指期(TXF)夜盤**(經 Shioaji,需期貨行情權限)+ **美股盤後**(復用國際背景的 SOX/SPX/Nasdaq/VIX)+ **台積電 ADR(TSM)溢/折價**(隔夜 gap 訊號,TSM × 美元台幣 ÷ 5 vs 2330 收盤;走 yfinance,免 Shioaji),並合成**開盤前定調(偏多/偏空/中性 + 透明依據)**。
+- **opt-in,預設關閉**;**限盤前時段**自動注入(走 `trading_calendar` 判定:盤中/午休/收盤競價/盤後不掛)。注入位置為大盤復盤報告頂部(日期之後、主要指數之前),**僅台股**、不對個股注入。資料標註為**隔夜/前一交易日盤後**,避免與當日資料混判。
+- **降級保護**:取不到台指期夜盤(未配置 Shioaji / 無期貨權限 / 快照失敗)時,自動退為「美股盤後 + ADR」並在報告標註「夜盤資料不可用」;全部取不到則不注入。皆不影響復盤主流程。
+- 設計與分期見 [premarket-outlook-plan.md](premarket-outlook-plan.md)。
+- 相關配置:
+
+| 變數 | 默認 | 說明 |
+| --- | --- | --- |
+| `PREMARKET_OUTLOOK_ENABLED` | `false` | 是否在台股大盤復盤注入「盤前展望」段;opt-in,設為 `true` 開啟 |
+| `SHIOAJI_API_KEY` / `SHIOAJI_SECRET_KEY` | 空 | Shioaji 憑證;取台指期夜盤所需(無則自動降級為僅美股盤後) |
 
 ### 首頁個股搜索下拉中的台股
 

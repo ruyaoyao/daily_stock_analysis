@@ -151,6 +151,39 @@ class _ShioajiSession:
                 continue
         return None
 
+    def resolve_futures_front_month(self, category: str = "TXF"):
+        """解析期货近月合约（默认台指期 TXF）。
+
+        优先用 R1 连续近月（如 ``TXFR1``）；取不到则扫描该类别下交割日最近、
+        非 R1/R2 连续约的实体合约。任一步失败回 None（期货权限/登录缺失时降级用）。
+        """
+        api = self.get_api()
+        if api is None:
+            return None
+        try:
+            store = getattr(api.Contracts.Futures, category, None)
+            if store is None:
+                return None
+            # 1) 连续近月 R1（最稳定、免猜交割月）
+            cont = getattr(store, f"{category}R1", None)
+            if cont is not None:
+                return cont
+            # 2) 退而扫描实体合约，挑交割日最近者（排除 R1/R2 连续约）
+            candidates = []
+            for c in store:
+                code = str(getattr(c, "code", "") or "")
+                if code.endswith("R1") or code.endswith("R2"):
+                    continue
+                delivery = getattr(c, "delivery_date", None)
+                if delivery:
+                    candidates.append((str(delivery), c))
+            if candidates:
+                candidates.sort(key=lambda x: x[0])
+                return candidates[0][1]
+        except Exception:
+            return None
+        return None
+
 
 def _to_float(value: Any) -> Optional[float]:
     try:
@@ -312,6 +345,50 @@ class ShioajiTwFetcher(BaseFetcher):
     # ------------------------------------------------------------------
     def get_main_indices(self, region: str = "cn") -> Optional[List[Dict[str, Any]]]:
         return None
+
+    # ------------------------------------------------------------------
+    # 台指期夜盘：供「盘前展望」模组（开盘前的隔夜前瞻）
+    # ------------------------------------------------------------------
+    def get_tx_night_quote(self) -> Optional[Dict[str, Any]]:
+        """获取台指期（TXF）近月合约的最新快照（含夜盘）。
+
+        用途：盘前展望的「美股盘后 → 台股开盘」隔夜信号。期货权限/登录缺失或
+        快照失败时回 None（由上层走降级版，不影响主流程）。
+        """
+        try:
+            contract = self._session.resolve_futures_front_month("TXF")
+            if contract is None:
+                logger.info("[ShioajiTwFetcher] 未取得台指期合约（期货权限/登录缺失？）")
+                return None
+            api = self._session.get_api()
+            if api is None:
+                return None
+            snapshots = api.snapshots([contract])
+        except Exception as e:
+            logger.info("[ShioajiTwFetcher] 台指期快照获取失败: %s", e)
+            return None
+
+        if not snapshots:
+            return None
+        snap = snapshots[0]
+        close = _to_float(getattr(snap, "close", None))
+        change_amount = _to_float(getattr(snap, "change_price", None))
+        change_pct = _to_float(getattr(snap, "change_rate", None))
+        if close is None:
+            return None
+        prev_close = round(close - change_amount, 4) if change_amount is not None else None
+        return {
+            "code": str(getattr(contract, "code", "TXF") or "TXF"),
+            "name": "台指期近月",
+            "price": close,
+            "change_amount": change_amount,
+            "change_pct": change_pct,
+            "prev_close": prev_close,
+            "high": _to_float(getattr(snap, "high", None)),
+            "low": _to_float(getattr(snap, "low", None)),
+            "volume": _to_int(getattr(snap, "total_volume", None)),
+            "source": "shioaji",
+        }
 
     # ------------------------------------------------------------------
     # 三大法人买卖超 / 融资融券余额：经 TWSE / TPEx OpenAPI（无需 Shioaji 凭据）

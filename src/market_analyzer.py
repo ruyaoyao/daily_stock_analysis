@@ -24,6 +24,7 @@ from src.report_language import normalize_report_language
 from src.search_service import SearchService
 from src.core.market_profile import get_profile, MarketProfile
 from src.core.market_strategy import get_market_strategy_blueprint
+from src.core.trading_calendar import infer_market_phase, MarketPhase
 from src.schemas.market_light import MarketLightSnapshot
 from data_provider.base import DataFetcherManager
 
@@ -131,6 +132,10 @@ class MarketOverview:
     # 國際情勢/宏觀背景（全市場通用）：SOX/DXY/VIX/美債10Y 等風險指標
     # 每筆：{'code','name','zh_name','en_name','current','change_pct',...}
     global_macro: List[Dict] = field(default_factory=list)
+
+    # 盤前展望（目前僅台股、opt-in）：台指期夜盤 + 美股盤後，供開盤前隔夜前瞻
+    # 結構：{'tx_night': {...} | None, 'us_session': [...]}；無法取得時為 None
+    premarket_outlook: Optional[Dict[str, Any]] = None
 
     # 跨數據源日期一致性（防止把不同交易日的指數/家數/籌碼拼在一起導致判斷失真）
     trade_date: Optional[str] = None                 # 本次覆盤錨定的交易日（YYYY-MM-DD）
@@ -412,6 +417,14 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         if getattr(self.config, "market_intl_context_enabled", True):
             self._get_global_macro(overview)
 
+        # 4.6 盤前展望（台指期夜盤 + 美股盤後 + 台積電 ADR；僅台股、opt-in，且限盤前時段）
+        if (
+            self.region == "tw"
+            and getattr(self.config, "premarket_outlook_enabled", False)
+            and self._is_premarket_window()
+        ):
+            self._get_premarket_outlook(overview)
+
         # 5. 跨數據源日期一致性校驗（防止把不同交易日的資料拼在一起判斷）
         self._resolve_trade_date_consistency(overview)
 
@@ -437,6 +450,98 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                 "[大盘] %s action=get_global_macro status=failed error=%s",
                 self._log_context(), e,
             )
+
+    def _is_premarket_window(self) -> bool:
+        """是否處於台股盤前時段。盤中/午休/收盤競價/盤後＝False（避免在盤後復盤誤掛盤前展望）;
+        盤前/非交易日/無法判定（xcals 不可用）＝True（寬鬆,由 opt-in + 排程時機控制）。"""
+        try:
+            phase = infer_market_phase("tw")
+        except Exception:
+            return True
+        return phase not in (
+            MarketPhase.INTRADAY,
+            MarketPhase.LUNCH_BREAK,
+            MarketPhase.CLOSING_AUCTION,
+            MarketPhase.POSTMARKET,
+        )
+
+    def _compute_premarket_bias(self, tx_night, us_session, adr) -> Dict[str, Any]:
+        """由台指期夜盤 / SOX / 台積電 ADR 溢價 / VIX 合成開盤前定調（透明、可解釋的啟發式）。"""
+        score = 0
+        reasons: List[str] = []
+
+        if tx_night and tx_night.get("change_pct") is not None:
+            p = tx_night["change_pct"]
+            if p > 0.3:
+                score += 2; reasons.append(f"台指期夜盤 +{p:.2f}%")
+            elif p < -0.3:
+                score -= 2; reasons.append(f"台指期夜盤 {p:.2f}%")
+
+        sox = next((x for x in (us_session or []) if x.get("code") == "SOX"), None)
+        if sox and sox.get("change_pct") is not None:
+            p = sox["change_pct"]
+            if p > 1:
+                score += 1; reasons.append(f"SOX +{p:.2f}%")
+            elif p < -1:
+                score -= 1; reasons.append(f"SOX {p:.2f}%")
+
+        # 用 ADR「隔夜漲跌」當訊號（台積電佔台股權重高、最貼近開盤方向）;
+        # 不用 premium_pct 水位——台積電 ADR 長期存在結構性溢價(常達兩位數),水位非 gap 訊號。
+        if adr and adr.get("adr_change_pct") is not None:
+            ac = adr["adr_change_pct"]
+            if ac > 1:
+                score += 1; reasons.append(f"台積電ADR隔夜 +{ac:.2f}%")
+            elif ac < -1:
+                score -= 1; reasons.append(f"台積電ADR隔夜 {ac:.2f}%")
+
+        vix = next((x for x in (us_session or []) if x.get("code") == "VIX"), None)
+        if vix and vix.get("change_pct") is not None and vix["change_pct"] > 8:
+            score -= 1; reasons.append(f"VIX +{vix['change_pct']:.1f}%（避險升溫）")
+
+        label = "偏多" if score > 0 else "偏空" if score < 0 else "中性"
+        return {"label": label, "score": score, "reasons": reasons}
+
+    def _get_premarket_outlook(self, overview: MarketOverview) -> None:
+        """組裝盤前展望（台指期夜盤 + 美股盤後 + 台積電 ADR 溢價 + 開盤前定調）。
+
+        fail-safe：台指期夜盤取數失敗（無 Shioaji / 無期貨權限）時走降級版——
+        僅以美股盤後（沿用國際背景指標）+ ADR 構成;全部皆無則不輸出。均不影響主流程。
+        """
+        try:
+            tx_night = self.data_manager.get_tx_night_quote()
+        except Exception as e:
+            tx_night = None
+            logger.warning(
+                "[大盘] %s action=get_tx_night status=failed error=%s", self._log_context(), e
+            )
+
+        # 美股盤後沿用國際背景指標（已在 4.5 取得則復用，否則再取一次）
+        us_session = list(overview.global_macro or [])
+        if not us_session:
+            try:
+                us_session = self.data_manager.get_global_macro_indicators() or []
+            except Exception:
+                us_session = []
+
+        # 台積電 ADR 溢價（隔夜 gap 訊號；走 yfinance，無 Shioaji 也可用）
+        try:
+            adr = self.data_manager.get_tsmc_adr_premium()
+        except Exception:
+            adr = None
+
+        if not tx_night and not us_session and not adr:
+            logger.info("[大盘] %s action=get_premarket_outlook status=empty", self._log_context())
+            return
+
+        bias = self._compute_premarket_bias(tx_night, us_session, adr)
+        overview.premarket_outlook = {
+            "tx_night": tx_night, "us_session": us_session, "adr": adr, "bias": bias,
+        }
+        logger.info(
+            "[大盘] %s action=get_premarket_outlook status=success tx_night=%s adr=%s bias=%s%s",
+            self._log_context(), bool(tx_night), bool(adr), bias["label"],
+            "" if tx_night else " (degraded: no TXF night data)",
+        )
 
     def _resolve_trade_date_consistency(self, overview: MarketOverview) -> None:
         """錨定本次覆盤的交易日並校驗各來源日期是否一致。
@@ -1282,6 +1387,69 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         lines.append(note)
         return "\n".join(lines)
 
+    def _build_premarket_outlook_block(self, overview: MarketOverview) -> str:
+        """構建「盤前展望」區塊（台指期夜盤 + 美股盤後;目前僅台股）。
+
+        台指期夜盤可用→完整版;不可用→降級版（僅美股盤後 + 標註夜盤資料不可用）;
+        兩者皆無→空字串。目前僅中文模板使用（台股走 zh）。
+        """
+        outlook = getattr(overview, "premarket_outlook", None)
+        if not outlook:
+            return ""
+        tx = outlook.get("tx_night")
+        us = outlook.get("us_session") or []
+        adr = outlook.get("adr")
+        bias = outlook.get("bias") or {}
+        if not tx and not us and not adr:
+            return ""
+
+        lines: List[str] = ["## 盤前展望（隔夜前瞻）"]
+
+        # 開盤前定調（偏多/偏空/中性 + 依據）
+        if bias.get("label"):
+            reasons = "、".join(bias.get("reasons") or []) or "訊號中性或不足"
+            lines.append(f"- **開盤前定調：{bias['label']}**（依據：{reasons}）")
+
+        if tx:
+            pct = tx.get("change_pct")
+            price = tx.get("price")
+            arrow = "↑" if (pct or 0) > 0 else "↓" if (pct or 0) < 0 else "-"
+            pct_txt = f"（{arrow}{abs(pct):.2f}%）" if pct is not None else ""
+            price_txt = f"{price:,.0f}" if price is not None else "—"
+            lines.append(f"- 台指期夜盤（{tx.get('name', '近月')}）：{price_txt}{pct_txt}")
+        else:
+            lines.append("- 台指期夜盤：資料不可用（未配置 Shioaji 或無期貨權限）→ 以下僅憑美股盤後/ADR 研判")
+
+        # 台積電 ADR：以「隔夜漲跌」為訊號；溢價水位含長期結構性溢價,僅供參考、非開盤漲跌目標
+        if adr:
+            adr_pct = adr.get("adr_change_pct")
+            pm = adr.get("premium_pct")
+            if adr_pct is not None:
+                arrow = "↑" if adr_pct > 0 else "↓" if adr_pct < 0 else "-"
+                pm_txt = f"；對 2330 溢價 {pm:+.2f}%（含結構性溢價，非漲跌目標）" if pm is not None else ""
+                lines.append(f"- 台積電 ADR 隔夜：{arrow}{abs(adr_pct):.2f}%{pm_txt}")
+            elif pm is not None:
+                lines.append(f"- 台積電 ADR 對 2330 溢價 {pm:+.2f}%（含結構性溢價，非漲跌目標）")
+
+        # 美股盤後（沿用國際背景指標，挑與開盤最相關的 SOX / 美股）
+        for item in us:
+            code = item.get("code")
+            if code not in ("SOX", "SPX", "Nasdaq", "VIX"):
+                continue
+            name = item.get("zh_name") or item.get("name", code)
+            cur = item.get("current")
+            pct = item.get("change_pct")
+            if cur is None:
+                continue
+            arrow = "↑" if (pct or 0) > 0 else "↓" if (pct or 0) < 0 else "-"
+            pct_txt = f"（{arrow}{abs(pct):.2f}%）" if pct is not None else ""
+            lines.append(f"- 美股盤後 {name}：{cur:,.2f}{pct_txt}")
+
+        if len(lines) <= 1:
+            return ""
+        lines.append("（資料為**隔夜/前一交易日盤後**;盤前展望＝美股盤後/台指期夜盤對今日開盤的隔夜指引，僅供開盤前定調，非進場訊號）")
+        return "\n".join(lines)
+
     def _build_news_block(self, news: List) -> str:
         """Build a compact source-aware news catalyst list for the rendered report."""
         if not news:
@@ -1501,6 +1669,9 @@ Lagging: {bottom_sectors_text if bottom_sectors_text else "N/A"}"""
         # 國際情勢/宏觀背景（SOX/DXY/VIX/美債10Y；全市場通用，無數據時為空字串不注入）
         intl_block = self._build_global_macro_block(overview)
 
+        # 盤前展望（台指期夜盤 + 美股盤後；目前僅台股 opt-in，無數據時為空字串不注入）
+        premarket_block = self._build_premarket_outlook_block(overview)
+
         # 跨來源資料日期一致性提示（避免把不同交易日的指數/家數/籌碼混判）
         data_date_note = self._build_data_date_note(overview)
 
@@ -1607,6 +1778,8 @@ Output the report content directly, no extra commentary.
 ## 日期
 {overview.date}
 {data_date_note}
+{premarket_block}
+
 ## 主要指數
 {indices_placeholder}
 

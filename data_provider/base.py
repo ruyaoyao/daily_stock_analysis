@@ -2280,6 +2280,45 @@ class DataFetcherManager:
                 continue
         return []
 
+    def get_tx_night_quote(self) -> Optional[Dict[str, Any]]:
+        """获取台指期（TXF）夜盘近月快照，供「盘前展望」。
+
+        走支持该能力的数据源（目前 Shioaji，需期货权限）；不可用或失败回 None
+        （由上层走降级版，不影响主流程）。
+        """
+        for fetcher in self._fetchers:
+            getter = getattr(fetcher, "get_tx_night_quote", None)
+            if getter is None:
+                continue
+            try:
+                data = getter()
+                if data:
+                    logger.info(f"[{fetcher.name}] 获取台指期夜盘成功")
+                    return data
+            except Exception as e:
+                logger.warning(f"[{fetcher.name}] 获取台指期夜盘失败: {e}")
+                continue
+        return None
+
+    def get_tsmc_adr_premium(self) -> Optional[Dict[str, Any]]:
+        """获取台积电 ADR（TSM）相对 2330 的溢/折价，供「盘前展望」隔夜 gap 信号。
+
+        走支持该能力的数据源（目前 yfinance，免 key）；不可用或失败回 None。
+        """
+        for fetcher in self._fetchers:
+            getter = getattr(fetcher, "get_tsmc_adr_premium", None)
+            if getter is None:
+                continue
+            try:
+                data = getter()
+                if data:
+                    logger.info(f"[{fetcher.name}] 获取台积电 ADR 溢价成功")
+                    return data
+            except Exception as e:
+                logger.warning(f"[{fetcher.name}] 获取台积电 ADR 溢价失败: {e}")
+                continue
+        return None
+
     def get_market_stats(self, *, purpose: str = "unspecified") -> Dict[str, Any]:
         """获取市场涨跌统计（自动切换数据源）。
 
