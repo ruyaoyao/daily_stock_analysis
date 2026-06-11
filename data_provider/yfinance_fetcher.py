@@ -362,6 +362,43 @@ class YfinanceFetcher(BaseFetcher):
 
         return None
 
+    def get_global_macro_indicators(self) -> Optional[List[Dict[str, Any]]]:
+        """獲取國際宏觀風險指標，作為大盤覆盤的「國際情勢」背景（全市場通用）。
+
+        指標（皆走 yfinance，免 key）：
+        - ^SOX     費城半導體指數（台股最相關的產業景氣代理）
+        - DX-Y.NYB 美元指數 DXY（資金面/匯率）
+        - ^VIX     波動率指數（風險偏好溫度計）
+        - ^TNX     美債 10 年期殖利率（利率環境）
+
+        單一指標失敗不影響其餘；結果含 zh_name/en_name 以利雙語渲染；全部失敗回 None。
+        """
+        import yfinance as yf
+
+        # (yfinance 代碼, 回寫 code, 中文名, 英文名)
+        macro_symbols = [
+            ('^SOX', 'SOX', '費城半導體指數', 'Philadelphia Semiconductor (SOX)'),
+            ('DX-Y.NYB', 'DXY', '美元指數', 'US Dollar Index (DXY)'),
+            ('^VIX', 'VIX', '波動率指數', 'Volatility Index (VIX)'),
+            ('^TNX', 'US10Y', '美債10年期殖利率', 'US 10Y Treasury Yield'),
+        ]
+        results: List[Dict[str, Any]] = []
+        for yf_code, code, zh_name, en_name in macro_symbols:
+            try:
+                item = self._fetch_yf_ticker_data(yf, yf_code, zh_name, code)
+                if item:
+                    item['zh_name'] = zh_name
+                    item['en_name'] = en_name
+                    results.append(item)
+                    logger.debug(f"[Yfinance] 獲取國際指標 {en_name} 成功")
+            except Exception as e:
+                logger.warning(f"[Yfinance] 獲取國際指標 {en_name} 失敗: {e}")
+
+        if results:
+            logger.info(f"[Yfinance] 成功獲取 {len(results)} 個國際宏觀指標")
+            return results
+        return None
+
     def _get_us_main_indices(self, yf) -> Optional[List[Dict[str, Any]]]:
         """獲取美股主要指數行情（SPX、IXIC、DJI、VIX），復用 _fetch_yf_ticker_data"""
         # 大盤復盤所需核心美股指數

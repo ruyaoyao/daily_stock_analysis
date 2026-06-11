@@ -2261,6 +2261,25 @@ class DataFetcherManager:
                 continue
         return []
 
+    def get_global_macro_indicators(self) -> List[Dict[str, Any]]:
+        """获取国际宏观风险指标（SOX/DXY/VIX/美债10Y），作为大盘复盘的国际情势背景。
+
+        走支持该能力的数据源（目前 yfinance，免 key）；任一来源失败则尝试下一个，全部失败回 []。
+        """
+        for fetcher in self._fetchers:
+            getter = getattr(fetcher, "get_global_macro_indicators", None)
+            if getter is None:
+                continue
+            try:
+                data = getter()
+                if data:
+                    logger.info(f"[{fetcher.name}] 获取国际宏观指标成功")
+                    return data
+            except Exception as e:
+                logger.warning(f"[{fetcher.name}] 获取国际宏观指标失败: {e}")
+                continue
+        return []
+
     def get_market_stats(self, *, purpose: str = "unspecified") -> Dict[str, Any]:
         """获取市场涨跌统计（自动切换数据源）。
 

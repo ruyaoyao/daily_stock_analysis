@@ -128,6 +128,10 @@ class MarketOverview:
     # 結構：{'institutional': {...} | None, 'margin': {...} | None}
     chip_stats: Optional[Dict[str, Any]] = None
 
+    # 國際情勢/宏觀背景（全市場通用）：SOX/DXY/VIX/美債10Y 等風險指標
+    # 每筆：{'code','name','zh_name','en_name','current','change_pct',...}
+    global_macro: List[Dict] = field(default_factory=list)
+
     # 跨數據源日期一致性（防止把不同交易日的指數/家數/籌碼拼在一起導致判斷失真）
     trade_date: Optional[str] = None                 # 本次覆盤錨定的交易日（YYYY-MM-DD）
     source_dates: Dict[str, str] = field(default_factory=dict)  # 各來源各自的資料日期
@@ -404,6 +408,10 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         if self.profile.has_chip_stats:
             self._get_chip_statistics(overview)
 
+        # 4.5 國際情勢/宏觀背景（SOX/DXY/VIX/美債10Y；全市場通用，免 key，可關閉）
+        if getattr(self.config, "market_intl_context_enabled", True):
+            self._get_global_macro(overview)
+
         # 5. 跨數據源日期一致性校驗（防止把不同交易日的資料拼在一起判斷）
         self._resolve_trade_date_consistency(overview)
 
@@ -411,6 +419,24 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         # self._get_north_flow(overview)
 
         return overview
+
+    def _get_global_macro(self, overview: MarketOverview) -> None:
+        """獲取國際宏觀風險指標作為國際情勢背景（fail-safe：取數失敗不影響覆盤主流程）。"""
+        try:
+            data = self.data_manager.get_global_macro_indicators()
+            if data:
+                overview.global_macro = data
+                logger.info(
+                    "[大盘] %s action=get_global_macro status=success count=%d",
+                    self._log_context(), len(data),
+                )
+            else:
+                logger.info("[大盘] %s action=get_global_macro status=empty", self._log_context())
+        except Exception as e:
+            logger.warning(
+                "[大盘] %s action=get_global_macro status=failed error=%s",
+                self._log_context(), e,
+            )
 
     def _resolve_trade_date_consistency(self, overview: MarketOverview) -> None:
         """錨定本次覆盤的交易日並校驗各來源日期是否一致。
@@ -1226,6 +1252,36 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
 
         return "\n".join(lines) if len(lines) > 1 else ""
 
+    def _build_global_macro_block(self, overview: MarketOverview) -> str:
+        """構建國際情勢/宏觀背景區塊（SOX/DXY/VIX/美債10Y；全市場通用，無數據回空字串）。"""
+        macro = getattr(overview, "global_macro", None) or []
+        if not macro:
+            return ""
+
+        en = self._get_review_language() == "en"
+        header = "## International Backdrop (global macro)" if en else "## 國際情勢（宏觀背景）"
+        lines: List[str] = [header]
+        for item in macro:
+            name = item.get("en_name" if en else "zh_name") or item.get("name", "")
+            cur = item.get("current")
+            pct = item.get("change_pct")
+            if cur is None:
+                continue
+            direction = "↑" if (pct or 0) > 0 else "↓" if (pct or 0) < 0 else "-"
+            pct_txt = f" ({direction}{abs(pct):.2f}%)" if pct is not None else ""
+            lines.append(f"- {name}: {cur:,.2f}{pct_txt}")
+
+        if len(lines) <= 1:
+            return ""
+        note = (
+            "(SOX = semiconductor cycle, DXY = USD, VIX = risk appetite, US10Y = rates; "
+            "treat as a risk-on/off backdrop only — do not over-attribute single-stock moves.)"
+            if en else
+            "（SOX＝半導體景氣、DXY＝美元、VIX＝風險偏好、美債10Y＝利率環境；僅作風險偏好定調背景，勿據此過度歸因個股漲跌）"
+        )
+        lines.append(note)
+        return "\n".join(lines)
+
     def _build_news_block(self, news: List) -> str:
         """Build a compact source-aware news catalyst list for the rendered report."""
         if not news:
@@ -1442,6 +1498,9 @@ Lagging: {bottom_sectors_text if bottom_sectors_text else "N/A"}"""
         # 籌碼面（三大法人 + 融資融券；目前僅台股有數據，其餘市場為空字串不注入）
         chip_block = self._build_chip_block(overview)
 
+        # 國際情勢/宏觀背景（SOX/DXY/VIX/美債10Y；全市場通用，無數據時為空字串不注入）
+        intl_block = self._build_global_macro_block(overview)
+
         # 跨來源資料日期一致性提示（避免把不同交易日的指數/家數/籌碼混判）
         data_date_note = self._build_data_date_note(overview)
 
@@ -1488,6 +1547,8 @@ Lagging: {bottom_sectors_text if bottom_sectors_text else "N/A"}"""
 {sector_block}
 
 {chip_block}
+
+{intl_block}
 
 ## Market News
 {news_placeholder}
@@ -1554,6 +1615,8 @@ Output the report content directly, no extra commentary.
 {sector_block}
 
 {chip_block}
+
+{intl_block}
 
 ## 市場新聞
 {news_placeholder}

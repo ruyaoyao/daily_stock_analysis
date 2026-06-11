@@ -802,6 +802,32 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         ],
         "warning_codes": [],
     },
+    "MARKET_INTL_CONTEXT_ENABLED": {
+        "title": "Market Intl Backdrop",
+        "description": "Enable the international/macro backdrop block in market-review reports (SOX / DXY / VIX / US 10Y Treasury yield via yfinance, no API key). Injected into all market reviews as a risk-on/off context; per-stock analysis is unaffected. Default: true.",
+        "category": "data_source",
+        "data_type": "boolean",
+        "ui_control": "switch",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "true",
+        "options": [],
+        "validation": {},
+        "display_order": 56,
+        "help_key": "settings.data_source.search_api_keys",
+        "examples": [
+            "MARKET_INTL_CONTEXT_ENABLED=true",
+            "MARKET_INTL_CONTEXT_ENABLED=false",
+        ],
+        "docs": [
+            {
+                "label": "完整指南：搜索服务配置",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/full-guide.md#搜索服务配置",
+            },
+        ],
+        "warning_codes": [],
+    },
     "TW_RSS_FEED_URLS": {
         "title": "Taiwan RSS Feed URLs",
         "description": "Comma-separated RSS feed URLs that override the built-in Taiwan finance feeds. Leave empty to use the defaults (Yahoo 股市 / 中央社 / 鉅亨网).",

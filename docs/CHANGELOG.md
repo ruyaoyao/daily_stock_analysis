@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] 大盘复盘新增「国际情势/宏观背景」区块：SOX（费半）/DXY（美元）/VIX/美债10Y 风险指标，走 yfinance（免 key、T+0），作为 risk-on/off 定调背景。全市场通用、仅大盘层级（个股不注入，避免逐档成本与过度归因），完全 fail-safe（单一指标或整块失败均不影响复盘）。新增开关 `MARKET_INTL_CONTEXT_ENABLED`（默认 true）。评估后不采用第三方 AI 二手情报站（无 API/RSS、可溯源性与 ToS 不明）。
 - [改进] 台股个股「筹码流动」改用权威 T+0 来源并定主备：三大法人以 FinMind 为主（约 150ms、值与官方一致）、官方 TWSE T86 / TPEx `insti/dailyTrade` CSV 为备（权威）；融资融券以官方 www T+0 为主（TWSE `MI_MARGN` / TPEx `margin/balance`，约 70-120ms、既权威又最快、含当日增减），FinMind 为备。新增 `_get_tpex_www_json`（处理 TPEx 凭证缺 SKI 的 SSL 重试、stat 不分大小写）；上柜三大法人改走官方 CSV（取代被 302 的 openapi）；融资融券改走 www T+0（取代 T+1、无日期的 openapi）。实测 4 象限值/日期一致＝当日；端到端每档 ~0.4-0.9s。
 - [修复] 台股个股三大法人/融资融券「永远取不到当日」：`_recent_trading_days()` 原从「昨天」起算，导致 T86/MI_MARGN 等盘后当日资料发布后仍取前一交易日；改为从「今天」起算（发布前自动回退），并加回归测试锁定。
 - [改进] 台股个股筹码 auto 模式改「逐日交错」试 TSE→OTC，避免上柜股票先空转 5 次上市来源（上柜个股端到端由 ~12.5s 降到 ~0.9s）。

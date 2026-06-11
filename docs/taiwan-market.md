@@ -76,9 +76,10 @@ pip install shioaji          # 已加入 requirements.txt
 | 日線 K 線 | `api.kbars()`（1 分鐘 K 重採樣為日線 OHLCV） | Shioaji |
 | 即時報價 | `api.snapshots()` | Shioaji |
 | 個股名稱 / 交易所歸屬 | contract 屬性 | Shioaji |
-| 主力資金流（→ 三大法人買賣超） | 外資 / 投信 / 自營商 買賣超 | TWSE T86（上市）/ TPEx OpenAPI（上櫃） |
-| 融資融券 | 融資融券餘額 | TWSE MI_MARGN（上市）/ TPEx OpenAPI（上櫃） |
+| 主力資金流（→ 三大法人買賣超） | 外資 / 投信 / 自營商 買賣超 | FinMind 優先（T+0）→ TWSE T86 / TPEx `insti/dailyTrade` CSV 兜底（見 [TW_MARGIN_INSTITUTIONAL_DATA_SOURCES.md](TW_MARGIN_INSTITUTIONAL_DATA_SOURCES.md)） |
+| 融資融券 | 融資融券餘額 | 官方 www T+0 優先（TWSE `MI_MARGN` / TPEx `margin/balance`）→ FinMind 兜底 |
 | 大盤指數 | 加權指數 ^TWII、櫃買指數 ^TWOII | yfinance |
+| 大盤國際情勢 / 宏觀背景 | SOX / DXY / VIX / 美債10Y | yfinance（免 key，見下「國際情勢」一節） |
 
 ### 上市（TSE）vs 上櫃（OTC）
 
@@ -106,6 +107,25 @@ pip install shioaji          # 已加入 requirements.txt
 | `TW_RSS_GOOGLE_NEWS_ENABLED` | `true` | 是否啟用 Google News RSS 個股檢索 |
 | `TW_RSS_FINMIND_NEWS_ENABLED` | `true` | 是否啟用 FinMind `TaiwanStockNews` |
 | `FINMIND_TOKEN` | 空 | FinMind API Token（可選；新聞與籌碼分布共用） |
+
+### 國際情勢 / 宏觀背景（大盤復盤）
+
+大盤復盤報告會注入一段「國際情勢（宏觀背景）」,作為**風險偏好（risk-on / risk-off）定調**的背景,協助判讀台股當日所處的全球環境:
+
+- 指標(皆走 **yfinance,免 API Key**,T+0):
+  - **SOX**(費城半導體指數)— 台股最相關的產業景氣代理
+  - **DXY**(美元指數)— 資金面 / 匯率
+  - **VIX**(波動率指數)— 風險偏好溫度計
+  - **US10Y**(美債 10 年期殖利率)— 利率環境
+- **全市場通用**(cn / hk / us / tw 的大盤復盤都會注入);**僅大盤層級**,個股分析不注入,避免逐檔放大成本與雜訊、或對個股漲跌過度歸因。
+- **完全 fail-safe**:單一指標失敗會被跳過,全部失敗則不注入該區塊,均不影響復盤主流程。
+- 相關配置:
+
+| 變數 | 默認 | 說明 |
+| --- | --- | --- |
+| `MARKET_INTL_CONTEXT_ENABLED` | `true` | 是否在大盤復盤注入國際情勢 / 宏觀背景區塊;設為 `false` 關閉 |
+
+> 說明:本專案曾評估第三方財經情報站(如 iux24)作為國際情勢來源,因其為 AI 二手摘要、無 API/RSS、可溯源性與 ToS 不明而**不採用**;改以可程式化、可溯源、免 key 的結構化指標(yfinance)為主來源。
 
 ### 首頁個股搜索下拉中的台股
 
