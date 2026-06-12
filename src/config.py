@@ -680,6 +680,12 @@ def setup_env(override: bool = False):
     else:
         env_path = Path(__file__).parent.parent / '.env'
     load_dotenv(dotenv_path=env_path, override=override)
+    try:
+        from src.patches.mini_racer_patch import apply_mini_racer_thread_patch
+
+        apply_mini_racer_thread_patch()
+    except Exception:
+        logger.debug("py_mini_racer thread patch skipped", exc_info=True)
 
 
 @dataclass
