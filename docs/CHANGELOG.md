@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 个股新闻相关性：台股/A股「纯数字代码」会误命中外文新闻里的普通数字（如英文矿业新闻 "3715 units" 被当成命中台股 3715，导致 TW3715 资讯动态混入无关矿业报导）。改为纯数字代码仅在「股票语境」下才算命中——括号包裹 (3715)/（3715），或文本含中日韩字符；中文财经新闻与括号代码（含英文）的真实命中不受影响。加回归测试锁定。
+- [修复] 个股筹码流动「融资融券」自动市场模式会在今日 www 尚未发布时，于第一天就短路到无日期的 openapi（T+1）备援，导致融资融券显示 `date=null`、增减为空（如 TW3715）。改为先逐日试 www T+0（TSE/OTC 交错），全部交易日试完仍无才退 openapi，确保取到含日期与前日余额（可算增减）的 T+0 数据。加回归测试锁定。
+- [修复] macOS + Python 3.12 并发分析时 `py_mini_racer`（akshare 依赖）可能触发 V8 `address_pool_manager` 致命崩溃（`make serve` / Web 触发多股分析）；启动时自动套用 MiniRacer 线程锁补丁，序列化 V8 初始化与执行。
 - [新功能] 台股大盘复盘新增「盘前展望」段（opt-in，`PREMARKET_OUTLOOK_ENABLED`，默认关闭）：台指期（TXF）夜盘（via Shioaji，需期货权限）+ 美股盘后（复用国际背景 SOX/SPX/Nasdaq/VIX）+ 台积电 ADR（TSM）溢/折价（隔夜 gap 信号，走 yfinance），并合成开盘前定调（偏多/偏空/中性 + 透明依据）。注入复盘报告顶部、仅台股、不对个股注入，且**限盘前时段**（盘中/盘后不挂）。取不到夜盘（无 Shioaji/无期货权限/快照失败）自动降级为「美股盘后 + ADR」并标注，全失败则不注入，均不影响主流程。资料标注为隔夜/前一交易日盘后，避免与当日资料混判。
 - [chore] 新增 `scripts/diagnose_shioaji_futures.py`：诊断 Shioaji 台指期（TXF）夜盘行情是否可取（凭证/登录/期货权限/快照逐段拆解），供「盘前展望」自检。
 - [文档] 新增 `docs/GLOBAL_MACRO_BACKDROP_SPEC.md`（国际情势背景 4 指标 SOX/DXY/VIX/US10Y 的演算法、来源、筛选实证与可携参考实作）与 `docs/premarket-outlook-plan.md`（「盘前展望」台指期夜盘 via Shioaji 模组的 scope/计画草案）。

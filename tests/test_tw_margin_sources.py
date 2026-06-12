@@ -48,6 +48,40 @@ def test_otc_margin_one_none_on_bad_stat():
         assert tw._otc_margin_one("6488", "20260610") is None
 
 
+# --- 自動市場：www T+0 必須優先於 openapi 備援（TW3715 回歸） ---
+
+def test_get_margin_balance_auto_prefers_www_tplus0_over_openapi_fallback():
+    """TW3715 回歸：今日 www 尚未發佈時,不可在第一天就短路到無日期的 openapi(T+1),
+    而應續試前一交易日的 www T+0（含日期 + 前日餘額 → 可算增減）。"""
+    www_by_day = {
+        "20260612": None,  # 今日盤後尚未發佈
+        "20260611": {"stock_code": "3715", "market": "TSE", "date": "2026-06-11",
+                     "margin_balance": 26664, "margin_prev": 26805,
+                     "short_balance": 101, "short_prev": 185, "margin_usage_pct": 37.61},
+    }
+    openapi_dateless = {"stock_code": "3715", "market": "TSE", "date": None,
+                        "margin_balance": 26664, "margin_prev": None}
+    with patch.object(tw, "_recent_trading_days", return_value=["20260612", "20260611"]), \
+         patch.object(tw, "_tse_margin_one", side_effect=lambda c, d: www_by_day.get(d)), \
+         patch.object(tw, "_otc_margin_one", return_value=None), \
+         patch.object(tw, "_tse_margin_openapi", return_value=openapi_dateless), \
+         patch.object(tw, "_otc_margin_openapi", return_value=None):
+        r = tw.get_margin_balance("3715")
+    assert r["date"] == "2026-06-11"        # www T+0,而非無日期的 openapi
+    assert r["margin_prev"] == 26805        # 有前日餘額 → 上層可算增減
+
+
+def test_get_margin_balance_auto_falls_back_to_openapi_only_after_all_www_fail():
+    openapi_dateless = {"stock_code": "3715", "market": "TSE", "date": None, "margin_balance": 26664}
+    with patch.object(tw, "_recent_trading_days", return_value=["20260612", "20260611"]), \
+         patch.object(tw, "_tse_margin_one", return_value=None), \
+         patch.object(tw, "_otc_margin_one", return_value=None), \
+         patch.object(tw, "_tse_margin_openapi", return_value=openapi_dateless), \
+         patch.object(tw, "_otc_margin_openapi", return_value=None):
+        r = tw.get_margin_balance("3715")
+    assert r is not None and r["margin_balance"] == 26664 and r["date"] is None
+
+
 # --- 上櫃 三大法人: TPEx insti/dailyTrade CSV (_fetch_otc_institutional) ---
 
 def test_otc_institutional_csv_column_mapping_and_identity():

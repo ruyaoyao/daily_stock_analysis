@@ -480,13 +480,20 @@ def _fetch_tse_margin(stock_code: str, date_str: Optional[str]) -> Optional[dict
         r = _tse_margin_one(stock_code, d)
         if r:
             return r
-    # 備援：openapi（T+1，無日期）
+    r = _tse_margin_openapi(stock_code)
+    if r:
+        return r
+    logger.warning("twse_openapi: TSE margin: stock %s 無資料（www+openapi 皆無）", stock_code)
+    return None
+
+
+def _tse_margin_openapi(stock_code: str) -> Optional[dict]:
+    """上市融資融券 openapi 備援（T+1、無日期欄位）。僅在 www T+0 全數失敗後使用。"""
     data = _get_json(_TSE_MARGN_OPENAPI_URL)
     if isinstance(data, list):
         for row in data:
             if str(row.get("股票代號", "")).strip() == stock_code:
                 return _parse_tse_margin_from_openapi_row(stock_code, row, report_date=None)
-    logger.warning("twse_openapi: TSE margin: stock %s 無資料（www+openapi 皆無）", stock_code)
     return None
 
 
@@ -554,35 +561,43 @@ def _fetch_otc_margin(stock_code: str, date_str: Optional[str]) -> Optional[dict
         r = _otc_margin_one(stock_code, d)
         if r:
             return r
-    # 備援：openapi（T+1；境外常被重定向）
-    data = _get_json(_TPEX_MARGN_URL)
-    if isinstance(data, list) and data:
-        code_keys = [k for k in data[0] if any(kw in k.lower() for kw in ("code", "no", "代號", "securi"))]
-        ckey = code_keys[0] if code_keys else None
-        for row in data:
-            if not ckey or str(row.get(ckey, "")).strip() != stock_code:
-                continue
-
-            def _pick(keys: list[str]) -> Optional[int]:
-                for k in row:
-                    if any(kw.lower() in k.lower() for kw in keys):
-                        return _safe_int(row[k])
-                return None
-
-            mb = _pick(["MarginBalance", "融資今日餘額"])
-            ml = _pick(["MarginLimit", "融資限額"])
-            return {
-                "stock_code": stock_code, "market": "OTC", "date": None,
-                "margin_buy": _pick(["MarginPurchase", "融資買進"]),
-                "margin_sell": _pick(["MarginSales", "融資賣出"]),
-                "margin_balance": mb, "margin_prev": _pick(["MarginYesterdayBalance"]),
-                "short_sell": _pick(["ShortSale", "融券賣出"]),
-                "short_cover": _pick(["ShortCovering", "融券買進"]),
-                "short_balance": _pick(["ShortBalance", "融券今日餘額"]),
-                "short_prev": _pick(["ShortYesterdayBalance"]),
-                "margin_usage_pct": round(mb / ml * 100, 4) if (mb is not None and ml and ml > 0) else None,
-            }
+    r = _otc_margin_openapi(stock_code)
+    if r:
+        return r
     logger.warning("twse_openapi: TPEx OTC 融資融券未找到 stock=%s", stock_code)
+    return None
+
+
+def _otc_margin_openapi(stock_code: str) -> Optional[dict]:
+    """上櫃融資融券 openapi 備援（T+1、無日期；境外常被 302 重定向）。僅在 www T+0 全數失敗後使用。"""
+    data = _get_json(_TPEX_MARGN_URL)
+    if not (isinstance(data, list) and data):
+        return None
+    code_keys = [k for k in data[0] if any(kw in k.lower() for kw in ("code", "no", "代號", "securi"))]
+    ckey = code_keys[0] if code_keys else None
+    for row in data:
+        if not ckey or str(row.get(ckey, "")).strip() != stock_code:
+            continue
+
+        def _pick(keys: list[str]) -> Optional[int]:
+            for k in row:
+                if any(kw.lower() in k.lower() for kw in keys):
+                    return _safe_int(row[k])
+            return None
+
+        mb = _pick(["MarginBalance", "融資今日餘額"])
+        ml = _pick(["MarginLimit", "融資限額"])
+        return {
+            "stock_code": stock_code, "market": "OTC", "date": None,
+            "margin_buy": _pick(["MarginPurchase", "融資買進"]),
+            "margin_sell": _pick(["MarginSales", "融資賣出"]),
+            "margin_balance": mb, "margin_prev": _pick(["MarginYesterdayBalance"]),
+            "short_sell": _pick(["ShortSale", "融券賣出"]),
+            "short_cover": _pick(["ShortCovering", "融券買進"]),
+            "short_balance": _pick(["ShortBalance", "融券今日餘額"]),
+            "short_prev": _pick(["ShortYesterdayBalance"]),
+            "margin_usage_pct": round(mb / ml * 100, 4) if (mb is not None and ml and ml > 0) else None,
+        }
     return None
 
 
@@ -676,14 +691,16 @@ def get_margin_balance(
         if market == "OTC":
             return _fetch_otc_margin(code, date)
 
-        # 自動：逐日「交錯」試 TSE→OTC，避免上櫃股票先空轉 5 次 TSE 才輪到 OTC。
+        # 自動：先逐日「交錯」試 www T+0（TSE→OTC），全部交易日試完仍無，才退 openapi（T+1、無日期）。
+        # 注意：openapi 備援必須留到最後，否則今日 www 尚未發佈時會在第一天就回傳無日期的 T+1 資料，
+        # 蓋掉前一交易日本可取得的 T+0 餘額/增減（見 TW3715 籌碼日期/增減為 null 的回歸案例）。
         if date:
             return _fetch_tse_margin(code, date) or _fetch_otc_margin(code, date)
         for d in _recent_trading_days(5):
-            result = _fetch_tse_margin(code, d) or _fetch_otc_margin(code, d)
+            result = _tse_margin_one(code, d) or _otc_margin_one(code, d)
             if result is not None:
                 return result
-        return None
+        return _tse_margin_openapi(code) or _otc_margin_openapi(code)
     except Exception as exc:
         logger.warning(
             "twse_openapi: get_margin_balance unexpected error for %s: %s", stock_code, exc

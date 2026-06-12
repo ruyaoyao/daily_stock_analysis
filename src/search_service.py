@@ -3116,6 +3116,15 @@ class SearchService:
             )
             return bool(re.search(pattern, text))
 
+        # 纯数字代码（台股 4 码 / A 股 6 码 / 港股数字）作为「裸数字」极易误命中外文文本里的普通数字
+        # （例：英文矿业新闻 "3715 units of torque" 被当成命中台股 3715）。仅在「股票语境」下才算命中：
+        # 括号包裹 (3715)/（3715），或文本含中日韩字符（台/陆/港股代码基本只出现在中文财经新闻里）。
+        if term.isdigit():
+            if re.search(r"[（(]\s*" + re.escape(term) + r"\s*[)）]", text):
+                return True
+            if not cls._contains_chinese_text(text):
+                return False
+
         return cls._contains_identity_term(text, term)
 
     @classmethod
