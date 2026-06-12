@@ -24,7 +24,7 @@ from src.report_language import normalize_report_language
 from src.search_service import SearchService
 from src.core.market_profile import get_profile, MarketProfile
 from src.core.market_strategy import get_market_strategy_blueprint
-from src.core.trading_calendar import infer_market_phase, MarketPhase
+from src.core.trading_calendar import infer_market_phase, MarketPhase, next_trading_session
 from src.schemas.market_light import MarketLightSnapshot
 from data_provider.base import DataFetcherManager
 
@@ -464,6 +464,41 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             MarketPhase.CLOSING_AUCTION,
             MarketPhase.POSTMARKET,
         )
+
+    def _next_session_context(self, overview: MarketOverview) -> tuple:
+        """回傳 (phrase, note) 描述本次覆盤錨定日的「下一交易日」。
+
+        phrase：下一交易日就是次日 → 「明日」；否則 → 「下一交易日（YYYY-MM-DD 週X）」，
+        避免在週末/連假前最後一個交易日寫出字面「明日」（臺股不開盤）。
+        note：僅在「下一交易日非次日」時給一行提醒，引導 LLM 用正確日期。
+        日曆不可用時回退為泛化措辭「下一交易日」，note 為空。
+        """
+        en = self._get_review_language() == "en"
+        anchor_str = getattr(overview, "trade_date", None) or overview.date
+        try:
+            anchor = datetime.strptime(anchor_str, "%Y-%m-%d").date()
+        except Exception:
+            return ("the next session" if en else "下一交易日", "")
+        nxt = next_trading_session(self.region, anchor)
+        if nxt is None:
+            return ("the next session" if en else "下一交易日", "")
+        is_tomorrow = (nxt - anchor).days == 1
+        if en:
+            wd = nxt.strftime("%a")
+            phrase = "tomorrow" if is_tomorrow else f"the next session ({nxt:%Y-%m-%d}, {wd})"
+            note = "" if is_tomorrow else (
+                f"Note: {anchor_str} is the last session before a market holiday/weekend; "
+                f"the next trading session is {nxt:%Y-%m-%d} ({wd}). Frame the outlook for that "
+                f"session — do not write a literal \"tomorrow\"."
+            )
+        else:
+            wd = "一二三四五六日"[nxt.weekday()]
+            phrase = "明日" if is_tomorrow else f"下一交易日（{nxt:%Y-%m-%d} 週{wd}）"
+            note = "" if is_tomorrow else (
+                f"注意：{anchor_str} 為休市前最後交易日，下一交易日為 {nxt:%Y-%m-%d}（週{wd}）；"
+                f"報告中所有對「{phrase}」的展望都指該交易日，請勿寫成字面「明日」。"
+            )
+        return (phrase, note)
 
     def _compute_premarket_bias(self, tx_night, us_session, adr) -> Dict[str, Any]:
         """由台指期夜盤 / SOX / 台積電 ADR 溢價 / VIX 合成開盤前定調（透明、可解釋的啟發式）。"""
@@ -1672,6 +1707,9 @@ Lagging: {bottom_sectors_text if bottom_sectors_text else "N/A"}"""
         # 盤前展望（台指期夜盤 + 美股盤後；目前僅台股 opt-in，無數據時為空字串不注入）
         premarket_block = self._build_premarket_outlook_block(overview)
 
+        # 「下一交易日」措辭：避免在週末/連假前最後交易日把展望寫成字面「明日」（市場不開盤）
+        next_session_phrase, next_session_note = self._next_session_context(overview)
+
         # 跨來源資料日期一致性提示（避免把不同交易日的指數/家數/籌碼混判）
         data_date_note = self._build_data_date_note(overview)
 
@@ -1710,6 +1748,7 @@ Lagging: {bottom_sectors_text if bottom_sectors_text else "N/A"}"""
 ## Date
 {overview.date}
 {data_date_note}
+{next_session_note}
 ## Major Indices
 {indices_placeholder}
 
@@ -1747,7 +1786,7 @@ Lagging: {bottom_sectors_text if bottom_sectors_text else "N/A"}"""
 (Analyze the drivers behind the leading and lagging sectors or themes.)
 
 ### 5. Outlook
-(Provide the near-term outlook based on price action and news.)
+(Provide the outlook for {next_session_phrase} based on price action and news.)
 
 ### 6. Risk Alerts
 (List the main risks to monitor.)
@@ -1778,6 +1817,7 @@ Output the report content directly, no extra commentary.
 ## 日期
 {overview.date}
 {data_date_note}
+{next_session_note}
 {premarket_block}
 
 ## 主要指數
@@ -1804,7 +1844,7 @@ Output the report content directly, no extra commentary.
 
 ## {overview.date} 大盤覆盤
 
-> 一句話給出今日市場狀態、核心矛盾和明日優先觀察方向。
+> 一句話給出今日市場狀態、核心矛盾和{next_session_phrase}優先觀察方向。
 
 ### 一、盤面總覽
 （2-3句話概括指數、漲跌家數、成交額和情緒溫度，明確“強勢/偏暖/震盪/偏弱”判斷）
@@ -1819,9 +1859,9 @@ Output the report content directly, no extra commentary.
 （解讀成交額、漲跌停結構、市場寬度和風險偏好）
 
 ### 五、消息催化
-（結合近三日新聞，提煉真正影響明日交易的催化或擾動）
+（結合近三日新聞，提煉真正影響{next_session_phrase}交易的催化或擾動）
 
-### 六、明日交易計劃
+### 六、{next_session_phrase}交易計劃
 （給出進攻/均衡/防守結論、倉位區間、關注方向、迴避方向和一個觸發失效條件）
 
 ### 七、風險提示

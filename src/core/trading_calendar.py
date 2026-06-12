@@ -166,6 +166,26 @@ def is_market_open(market: str, check_date: date) -> bool:
         return True
 
 
+def next_trading_session(market: str, after_date: date) -> Optional[date]:
+    """返回严格晚于 ``after_date`` 的下一交易日（跨越周末/假日）。
+
+    市场不支持或交易所日历不可用时返回 None（调用方据此回退到泛化措辞，如「下一交易日」）。
+    """
+    if not _XCALS_AVAILABLE:
+        return None
+    ex = MARKET_EXCHANGE.get(market)
+    if not ex:
+        return None
+    try:
+        cal = xcals.get_calendar(ex)
+        target = datetime(after_date.year, after_date.month, after_date.day) + timedelta(days=1)
+        session = cal.date_to_session(target, direction="next")
+        return session.date()
+    except Exception as e:
+        logger.warning("trading_calendar.next_trading_session unavailable: %s", e)
+        return None
+
+
 def get_market_now(
     market: Optional[str], current_time: Optional[datetime] = None
 ) -> datetime:
