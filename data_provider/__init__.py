@@ -33,6 +33,7 @@
 from .base import BaseFetcher, DataFetcherManager, is_tw_stock_code
 from .shioaji_tw_fetcher import ShioajiTwFetcher
 from .efinance_fetcher import EfinanceFetcher
+from .tencent_fetcher import TencentFetcher
 from .akshare_fetcher import AkshareFetcher, is_hk_stock_code
 from .tushare_fetcher import TushareFetcher
 from .pytdx_fetcher import PytdxFetcher
@@ -49,6 +50,7 @@ __all__ = [
     'ShioajiTwFetcher',
     'is_tw_stock_code',
     'EfinanceFetcher',
+    'TencentFetcher',
     'AkshareFetcher',
     'TushareFetcher',
     'PytdxFetcher',
