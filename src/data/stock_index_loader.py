@@ -109,6 +109,43 @@ def _load_remote_stock_index_file(index_path: Path) -> Dict[str, str]:
     return _build_stock_name_map(raw_items)
 
 
+def _bundled_stock_index_paths() -> tuple[Path, ...]:
+    """Local bundled index candidates (everything except the remote cache)."""
+    remote = get_remote_stock_index_cache_path()
+    return tuple(p for p in get_stock_index_candidate_paths() if not _same_path(p, remote))
+
+
+def _supplement_with_bundled_entries(active_map: Dict[str, str]) -> Dict[str, str]:
+    """Union bundled-index entries that the active (remote) map is missing.
+
+    The remote index is fetched from a generic source that may not carry markets
+    this fork ships locally (e.g. Taiwan TW/TWO). Without this, a remote refresh
+    would silently drop those stocks. Active entries win — only keys absent from
+    ``active_map`` are added — so the remote stays authoritative and fresh for the
+    markets it does cover, while local-only markets are always preserved.
+    """
+    for path in _bundled_stock_index_paths():
+        try:
+            bundled = _load_stock_index_file(path)
+        except (OSError, TypeError, ValueError) as exc:
+            logger.debug("[股票名称] 读取内建索引失败 %s: %s", path, exc)
+            continue
+        if not bundled:
+            continue
+        added = 0
+        for key, name in bundled.items():
+            if key not in active_map:
+                active_map[key] = name
+                added += 1
+        if added:
+            logger.info(
+                "[股票名称] 远程索引缺失本地市场，已从内建索引 %s 补入 %d 个键（避免台股等被覆盖）",
+                path, added,
+            )
+        return active_map  # first usable bundled file already carries all local markets
+    return active_map
+
+
 def _get_stock_index_signature(index_path: Path) -> tuple[float, int] | None:
     try:
         stat_result = index_path.stat()
@@ -195,7 +232,11 @@ def get_stock_name_index_map() -> Dict[str, str]:
         for index_path in _get_fresh_stock_index_candidates(get_stock_index_candidate_paths(), remote_path):
             try:
                 if _same_path(index_path, remote_path):
-                    _STOCK_INDEX_CACHE = _load_remote_stock_index_file(index_path)
+                    # Remote (upstream) index may lack fork-local markets (TW/TWO);
+                    # union bundled entries so a remote refresh never drops them.
+                    _STOCK_INDEX_CACHE = _supplement_with_bundled_entries(
+                        _load_remote_stock_index_file(index_path)
+                    )
                 else:
                     _STOCK_INDEX_CACHE = _load_stock_index_file(index_path)
                 logger.debug(
