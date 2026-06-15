@@ -59,6 +59,7 @@ from src.schemas.decision_action import build_action_fields
 from src.schemas.report_schema import AnalysisReportSchema
 from src.market_context import get_market_role, get_market_guidelines
 from src.market_phase_prompt import format_market_phase_prompt_section
+from src.core.trading_calendar import get_market_for_stock
 
 logger = logging.getLogger(__name__)
 
@@ -3021,15 +3022,21 @@ class GeminiAnalyzer:
         pct_chg_label = "实时涨跌幅" if realtime_overlay_quote else "涨跌幅"
         volume_label = "实时成交量" if realtime_overlay_quote else "成交量"
         amount_label = "实时成交额" if realtime_overlay_quote else "成交额"
+        # 台股报价币别显式标 NT$（新台币）；其余市场维持「元」原状
+        is_tw_stock = get_market_for_stock(code) == "tw"
+        price_unit = "元（NT$）" if is_tw_stock else "元"
+        tw_currency_note = (
+            "\n> 💱 本檔為台股，報價與成交額幣別為新台幣（NT$）。\n" if is_tw_stock else ""
+        )
         quote_rows = [
-            f"| {close_price_label} | {today.get('close', 'N/A')} 元 |",
+            f"| {close_price_label} | {today.get('close', 'N/A')} {price_unit} |",
         ]
         if not hide_regular_session_ohlc:
             quote_rows.extend(
                 [
-                    f"| 开盘价 | {today.get('open', 'N/A')} 元 |",
-                    f"| 最高价 | {today.get('high', 'N/A')} 元 |",
-                    f"| 最低价 | {today.get('low', 'N/A')} 元 |",
+                    f"| 开盘价 | {today.get('open', 'N/A')} {price_unit} |",
+                    f"| 最高价 | {today.get('high', 'N/A')} {price_unit} |",
+                    f"| 最低价 | {today.get('low', 'N/A')} {price_unit} |",
                 ]
             )
         quote_rows.extend(
@@ -3062,7 +3069,7 @@ class GeminiAnalyzer:
         prompt += f"""
 
 ## 📈 技术面数据
-
+{tw_currency_note}
 ### {quote_section_title}
 | 指标 | 数值 |
 |------|------|
@@ -3084,7 +3091,7 @@ class GeminiAnalyzer:
 ### 实时行情增强数据
 | 指标 | 数值 | 解读 |
 |------|------|------|
-| 当前价格 | {rt.get('price', 'N/A')} 元 | |
+| 当前价格 | {rt.get('price', 'N/A')} {price_unit} | |
 | **量比** | **{rt.get('volume_ratio', 'N/A')}** | {rt.get('volume_ratio_desc', '')} |
 | **换手率** | **{rt.get('turnover_rate', 'N/A')}%** | |
 | 市盈率(动态) | {rt.get('pe_ratio', 'N/A')} | |
@@ -3201,7 +3208,7 @@ class GeminiAnalyzer:
 | 指标 | 数值 | 健康标准 |
 |------|------|----------|
 | **获利比例** | **{profit_ratio:.1%}** | 70-90%时警惕 |
-| 平均成本 | {chip.get('avg_cost', 'N/A')} 元 | 现价应高于5-15% |
+| 平均成本 | {chip.get('avg_cost', 'N/A')} {price_unit} | 现价应高于5-15% |
 | 90%筹码集中度 | {chip.get('concentration_90', 0):.2%} | <15%为集中 |
 | 70%筹码集中度 | {chip.get('concentration_70', 0):.2%} | |
 | 筹码状态 | {chip.get('chip_status', unknown_text)} | |
