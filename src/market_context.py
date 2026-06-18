@@ -2,7 +2,7 @@
 """
 Market context detection for LLM prompts.
 
-Detects the market (A-shares, HK, US) from a stock code and returns
+Detects the market (A-shares, HK, US, Taiwan) from a stock code and returns
 market-specific role descriptions so prompts are not hardcoded to a
 single market.
 
@@ -17,29 +17,25 @@ def detect_market(stock_code: Optional[str]) -> str:
     """Detect market from stock code.
 
     Returns:
-        One of 'cn', 'hk', 'us', or 'cn' as fallback.
+        One of 'cn', 'hk', 'us', 'tw', or 'cn' as fallback when unrecognized.
     """
     if not stock_code:
         return "cn"
 
+    # Reuse the canonical router used by pipeline / trading calendar so prompt
+    # templates stay aligned with data-source routing (TW prefix before HK heuristics).
+    from src.core.trading_calendar import get_market_for_stock
+
+    market = get_market_for_stock(stock_code.strip())
+    if market is not None:
+        return market
+
+    # Legacy fallback for codes outside get_market_for_stock (e.g. bare letters
+    # that are not valid US tickers but were previously treated as US).
     code = stock_code.strip().upper()
-
-    # HK stocks: HK00700, 00700.HK, or 5-digit pure numbers
-    if code.startswith("HK") or code.endswith(".HK"):
-        return "hk"
-    lower = code.lower()
-    if lower.endswith(".hk"):
-        return "hk"
-    # 5-digit pure numbers are HK (A-shares are 6-digit)
-    if code.isdigit() and len(code) == 5:
-        return "hk"
-
-    # US stocks: 1-5 uppercase letters (AAPL, TSLA, GOOGL)
-    # Also handles suffixed forms like BRK.B
-    if re.match(r'^[A-Z]{1,5}(\.[A-Z]{1,2})?$', code):
+    if re.match(r"^[A-Z]{1,5}(\.[A-Z]{1,2})?$", code):
         return "us"
 
-    # Default: A-shares (6-digit numbers like 600519, 000001)
     return "cn"
 
 
@@ -57,6 +53,10 @@ _MARKET_ROLES = {
     "us": {
         "zh": "美股",
         "en": "US stock",
+    },
+    "tw": {
+        "zh": "台股",
+        "en": "Taiwan stock",
     },
 }
 
@@ -89,6 +89,18 @@ _MARKET_GUIDELINES = {
         "en": (
             "- This analysis covers a **US stock** (listed on NYSE/NASDAQ).\n"
             "- US stocks have no daily price limits (but have circuit breakers), allow T+0 and pre/after-market trading. Consider USD FX, Fed policy, and SEC regulations."
+        ),
+    },
+    "tw": {
+        "zh": (
+            "- 本次分析对象为 **台股**（台湾证券交易所上市 / 柜买中心上柜）。\n"
+            "- 请关注台股涨跌停（一般 ±10%）、T+2 交割、三大法人买卖超、融资融券余额，"
+            "以及美股/ADR、汇率与半导体产业链等外部联动因素。"
+        ),
+        "en": (
+            "- This analysis covers a **Taiwan stock** (TSE listed or TPEx OTC).\n"
+            "- Consider TW daily price limits (typically ±10%), T+2 settlement, institutional buy/sell flows, "
+            "margin balance, and linkage to US/ADR moves, FX, and the semiconductor supply chain."
         ),
     },
 }

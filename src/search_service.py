@@ -3572,6 +3572,22 @@ class SearchService:
         )
 
     @classmethod
+    def _normalized_news_title(cls, title: Optional[str]) -> str:
+        """Dedup key for a news title: strip a trailing source suffix (Google-News
+        style「标题 - 来源」/「标题｜来源」), collapse whitespace, lowercase.
+
+        So the same story republished by different outlets (经济日报 / UDN) collapses
+        to one key. Empty title -> "" (caller keeps such items, not deduped together).
+        """
+        raw = str(title or "").strip()
+        if not raw:
+            return ""
+        # remove a short trailing " - Source" / "｜Source" / "| Source" segment
+        stripped = re.sub(r"\s*[\-–—｜|]\s*[^\-–—｜|]{1,40}$", "", raw).strip()
+        base = stripped or raw
+        return re.sub(r"\s+", "", base).lower()
+
+    @classmethod
     def _rank_news_response(
         cls,
         response: SearchResponse,
@@ -3604,7 +3620,22 @@ class SearchService:
             return (category_rank, language_rank, -score, index)
 
         ranked_results = [result for _, result in sorted(indexed_results, key=sort_key)]
-        limited_results = ranked_results[:max_results]
+
+        # 去重：同一篇报道经不同来源出现（如「… - 经济日报」与「… - UDN」标题相同、
+        # URL 不同），剥离来源后缀后按标题去重，只保留排序最高的一条，避免重复占用条数。
+        deduped_results: List[SearchResult] = []
+        seen_titles: set[str] = set()
+        for result in ranked_results:
+            title_key = cls._normalized_news_title(result.title)
+            if not title_key:
+                deduped_results.append(result)
+                continue
+            if title_key in seen_titles:
+                continue
+            seen_titles.add(title_key)
+            deduped_results.append(result)
+
+        limited_results = deduped_results[:max_results]
         category_counts = {
             cls._DIRECT_NEWS_CATEGORY: 0,
             cls._SECTOR_NEWS_CATEGORY: 0,
