@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 _STOCK_INDEX_FILENAME = "stocks.index.json"
 _STOCK_INDEX_CACHE: Dict[str, str] | None = None
 _REMOTE_INDEX_VALIDITY_CACHE: tuple[Path, float, int, bool] | None = None
+_SERVED_STOCK_INDEX_CACHE: tuple[Path, float, int, bytes] | None = None
 _STOCK_INDEX_CACHE_LOCK = RLock()
 
 
@@ -146,6 +147,96 @@ def _supplement_with_bundled_entries(active_map: Dict[str, str]) -> Dict[str, st
     return active_map
 
 
+def _stock_index_item_key(item: object) -> Optional[str]:
+    """Return the canonical-code dedupe key for a wire payload item."""
+    if not isinstance(item, list) or not item:
+        return None
+    canonical = str(item[0] or "").strip().upper()
+    return canonical or None
+
+
+def supplement_payload_with_bundled_markets(remote_items: list) -> list:
+    """Union bundled-index entries missing from the remote wire payload.
+
+    Mirrors :func:`_supplement_with_bundled_entries` (which protects backend name
+    lookup) but operates on the full ``stocks.index.json`` payload, so the
+    *served* autocomplete index keeps fork-local markets (Taiwan TW/TWO) that the
+    upstream remote index omits. Remote entries stay authoritative; only canonical
+    codes absent from the remote payload are appended. A new list is returned —
+    the inputs are never mutated.
+    """
+    if not isinstance(remote_items, list):
+        return remote_items
+
+    remote_keys = {
+        key for key in (_stock_index_item_key(item) for item in remote_items) if key
+    }
+    for path in _bundled_stock_index_paths():
+        try:
+            bundled = _load_stock_index_payload(path)
+        except (OSError, TypeError, ValueError) as exc:
+            logger.debug("[股票名称] 读取内建索引失败 %s: %s", path, exc)
+            continue
+        if not isinstance(bundled, list) or not bundled:
+            continue
+        supplemental = [
+            item
+            for item in bundled
+            if (key := _stock_index_item_key(item)) is not None and key not in remote_keys
+        ]
+        if supplemental:
+            logger.info(
+                "[股票名称] 远程索引缺失本地市场，下发索引已补入 %d 条（避免台股等被覆盖）",
+                len(supplemental),
+            )
+        # first usable bundled file already carries all local markets
+        return remote_items + supplemental
+    return remote_items
+
+
+def get_served_stock_index_bytes(index_path: Path) -> bytes:
+    """Return the JSON bytes to serve for ``index_path``.
+
+    Bundled indexes ship fork-local markets, so they are served verbatim. The
+    remote cache may omit them (Taiwan TW/TWO); in that case the payload is
+    unioned with bundled entries before serving so the autocomplete never drops
+    those stocks. Cached by ``(path, mtime, size)`` so the merge only runs when
+    the underlying file changes. Falls back to the raw bytes if the payload
+    cannot be parsed.
+    """
+    global _SERVED_STOCK_INDEX_CACHE
+
+    raw = index_path.read_bytes()
+    remote_cache_path = get_remote_stock_index_cache_path()
+    if not _same_path(index_path, remote_cache_path):
+        return raw
+
+    signature = _get_stock_index_signature(index_path)
+    with _STOCK_INDEX_CACHE_LOCK:
+        cached = _SERVED_STOCK_INDEX_CACHE
+        if (
+            cached is not None
+            and signature is not None
+            and cached[0] == index_path
+            and (cached[1], cached[2]) == signature
+        ):
+            return cached[3]
+
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+            merged = supplement_payload_with_bundled_markets(payload)
+            content = json.dumps(
+                merged, ensure_ascii=False, separators=(",", ":")
+            ).encode("utf-8")
+        except (ValueError, TypeError) as exc:
+            logger.debug("[股票名称] 下发索引补全失败，回退原始内容: %s", exc)
+            return raw
+
+        if signature is not None:
+            _SERVED_STOCK_INDEX_CACHE = (index_path, signature[0], signature[1], content)
+        return content
+
+
 def _get_stock_index_signature(index_path: Path) -> tuple[float, int] | None:
     try:
         stat_result = index_path.stat()
@@ -269,10 +360,11 @@ def get_index_stock_name(stock_code: str) -> str | None:
 
 def clear_stock_index_cache() -> None:
     """Clear the in-process stock index lookup cache."""
-    global _REMOTE_INDEX_VALIDITY_CACHE, _STOCK_INDEX_CACHE
+    global _REMOTE_INDEX_VALIDITY_CACHE, _STOCK_INDEX_CACHE, _SERVED_STOCK_INDEX_CACHE
     with _STOCK_INDEX_CACHE_LOCK:
         _STOCK_INDEX_CACHE = None
         _REMOTE_INDEX_VALIDITY_CACHE = None
+        _SERVED_STOCK_INDEX_CACHE = None
 
 
 def _clear_stock_index_cache_for_tests() -> None:

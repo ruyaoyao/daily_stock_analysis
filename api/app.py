@@ -137,7 +137,10 @@ from api.middlewares.auth import add_auth_middleware
 from api.middlewares.error_handler import add_error_handlers
 from api.v1.schemas.common import HealthResponse
 from src.auth import is_auth_enabled
-from src.data.stock_index_loader import find_existing_stock_index_path
+from src.data.stock_index_loader import (
+    find_existing_stock_index_path,
+    get_served_stock_index_bytes,
+)
 from src.services.system_config_service import SystemConfigService
 from src.services.stock_index_remote_service import (
     get_remote_stock_index_cache_path,
@@ -373,8 +376,19 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
                 status_code=404,
                 media_type="text/plain",
             )
-        return FileResponse(
-            index_path,
+        try:
+            # The upstream remote cache omits fork-local markets (Taiwan TW/TWO);
+            # supplement them so the served autocomplete index never drops those
+            # stocks. Bundled indexes already carry them and are returned as-is.
+            content = await run_in_threadpool(get_served_stock_index_bytes, index_path)
+        except OSError:
+            return Response(
+                content="stock index not found",
+                status_code=404,
+                media_type="text/plain",
+            )
+        return Response(
+            content=content,
             media_type="application/json",
             headers=_STOCK_INDEX_HEADERS,
         )
