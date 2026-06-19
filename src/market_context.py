@@ -33,7 +33,27 @@ def detect_market(stock_code: Optional[str]) -> str:
     # Legacy fallback for codes outside get_market_for_stock (e.g. bare letters
     # that are not valid US tickers but were previously treated as US).
     code = stock_code.strip().upper()
-    if re.match(r"^[A-Z]{1,5}(\.[A-Z]{1,2})?$", code):
+
+    # HK stocks: HK00700, 00700.HK, or 5-digit pure numbers
+    if code.startswith("HK") or code.endswith(".HK"):
+        return "hk"
+    lower = code.lower()
+    if lower.endswith(".hk"):
+        return "hk"
+    # 5-digit pure numbers are HK (A-shares are 6-digit)
+    if code.isdigit() and len(code) == 5:
+        return "hk"
+
+    # Japan/Korea suffix-only symbols supported by Yahoo Finance.
+    # Bare Korean six-digit codes remain A-share fallback to avoid collision.
+    if re.match(r'^\d{4,5}\.T$', code):
+        return "jp"
+    if re.match(r'^\d{6}\.(KS|KQ)$', code):
+        return "kr"
+
+    # US stocks: 1-5 uppercase letters (AAPL, TSLA, GOOGL)
+    # Also handles suffixed forms like BRK.B
+    if re.match(r'^[A-Z]{1,5}(\.[A-Z]{1,2})?$', code):
         return "us"
 
     return "cn"
@@ -57,6 +77,14 @@ _MARKET_ROLES = {
     "tw": {
         "zh": "台股",
         "en": "Taiwan stock",
+    },
+    "jp": {
+        "zh": "日股",
+        "en": "Japan stock",
+    },
+    "kr": {
+        "zh": "韩股",
+        "en": "Korea stock",
     },
 }
 
@@ -101,6 +129,26 @@ _MARKET_GUIDELINES = {
             "- This analysis covers a **Taiwan stock** (TSE listed or TPEx OTC).\n"
             "- Consider TW daily price limits (typically ±10%), T+2 settlement, institutional buy/sell flows, "
             "margin balance, and linkage to US/ADR moves, FX, and the semiconductor supply chain."
+        ),
+    },
+    "jp": {
+        "zh": (
+            "- 本次分析对象为 **日股**（日本交易所上市股票，Yahoo Finance suffix 如 `.T`）。\n"
+            "- 请按日本市场语境分析，关注日元汇率、日本央行政策、公司治理与行业周期；不要套用 A 股涨跌停、北向资金、龙虎榜、融资融券等 A 股专属概念。"
+        ),
+        "en": (
+            "- This analysis covers a **Japan stock** (Yahoo Finance suffix such as `.T`).\n"
+            "- Use Japan-market context: JPY FX, BOJ policy, corporate governance, and sector cycles; do not apply China A-share concepts such as daily price-limit boards, Northbound flows, Dragon Tiger lists, or margin-financing narratives."
+        ),
+    },
+    "kr": {
+        "zh": (
+            "- 本次分析对象为 **韩股**（韩国交易所/KOSDAQ 上市股票，必须带 `.KS` / `.KQ` 后缀）。\n"
+            "- 请按韩国市场语境分析，关注韩元汇率、韩国央行政策、半导体/互联网产业周期与韩国交易制度；不要套用 A 股涨跌停、北向资金、龙虎榜、融资融券等 A 股专属概念。"
+        ),
+        "en": (
+            "- This analysis covers a **Korea stock** (KOSPI/KOSDAQ suffix `.KS` / `.KQ`).\n"
+            "- Use Korea-market context: KRW FX, Bank of Korea policy, semiconductor/internet cycles, and local trading rules; do not apply China A-share concepts such as daily price-limit boards, Northbound flows, Dragon Tiger lists, or margin-financing narratives."
         ),
     },
 }
