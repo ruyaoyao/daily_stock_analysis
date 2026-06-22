@@ -15,6 +15,8 @@ const STOCK_CODE_PATTERNS = [
   /^\d{1,5}\.HK$/, // HK suffix format, for example 00700.HK
   /^TW\d{4,6}$/, // Taiwan prefix format, for example TW2330 / TW0050
   /^\d{4,6}\.TWO?$/, // Taiwan suffix format, for example 2330.TW / 2330.TWO
+  /^\d{4,5}\.T$/, // Japan Yahoo suffix format, for example 7203.T
+  /^\d{6}\.(KS|KQ)$/, // Korea Yahoo suffix format, for example 005930.KS or 035720.KQ
   /^[A-Z]{1,5}(?:\.(?:US|[A-Z]))?$/, // Common US ticker format
 ];
 
@@ -27,7 +29,7 @@ export const looksLikeStockCode = (value: string): boolean => {
 };
 
 /**
- * Validate common A-share, HK, and US stock code formats.
+ * Validate common A-share, HK, US, JP, and KR stock code formats.
  */
 export const validateStockCode = (value: string): ValidationResult => {
   const normalized = value.trim().toUpperCase();

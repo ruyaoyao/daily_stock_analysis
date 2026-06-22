@@ -6,7 +6,13 @@ Covers: is_code_like, normalize_code - including exchange prefix handling.
 
 import pytest
 
-from src.services.stock_code_utils import is_code_like, normalize_code
+from unittest.mock import patch
+
+from src.services.stock_code_utils import (
+    is_code_like,
+    normalize_code,
+    resolve_index_stock_code_for_analysis,
+)
 
 
 class TestIsCodeLike:
@@ -213,3 +219,13 @@ class TestTaiwanCodes:
         # "TW" alone is a valid US ticker, not a Taiwan code.
         assert normalize_code("TW") == "TW"
 
+
+class TestResolveIndexStockCodeForAnalysis:
+    def test_resolves_via_stock_index(self):
+        with patch("src.data.stock_index_loader.resolve_index_stock_code", return_value="005930.KS"):
+            assert resolve_index_stock_code_for_analysis("005930") == "005930.KS"
+
+    def test_falls_back_to_canonical_when_index_miss(self):
+        with patch("src.data.stock_index_loader.resolve_index_stock_code", return_value=None):
+            assert resolve_index_stock_code_for_analysis("005930") == "005930"
+            assert resolve_index_stock_code_for_analysis("AAPL") == "AAPL"

@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest';
-import { validateStockCode, looksLikeStockCode, isObviouslyInvalidStockQuery } from '../validation';
+import { describe, it, test, expect } from 'vitest';
+import {
+  isObviouslyInvalidStockQuery,
+  looksLikeStockCode,
+  validateStockCode,
+} from '../validation';
 
 describe('validateStockCode - Taiwan codes', () => {
   it.each(['tw0050', 'TW2330', 'tw006208', '0050.TW', '2330.TWO'])(
@@ -21,4 +25,28 @@ describe('validateStockCode - Taiwan codes', () => {
   it('rejects a bare 4-digit code without the tw prefix', () => {
     expect(validateStockCode('2330').valid).toBe(false);
   });
+});
+
+describe('stock code validation', () => {
+  test.each([
+    ['7203.T', '7203.T'],
+    ['6758.t', '6758.T'],
+    ['005930.KS', '005930.KS'],
+    ['035720.kq', '035720.KQ'],
+  ])('accepts JP/KR Yahoo suffix code %s', (input, normalized) => {
+    expect(looksLikeStockCode(input)).toBe(true);
+    expect(validateStockCode(input)).toEqual({
+      valid: true,
+      normalized,
+    });
+    expect(isObviouslyInvalidStockQuery(input)).toBe(false);
+  });
+
+  test.each(['7203', '005930.K', '035720.KRX'])(
+    'does not treat ambiguous JP/KR-like query %s as a valid suffix code',
+    (input) => {
+      const result = validateStockCode(input);
+      expect(result.valid).toBe(false);
+    }
+  );
 });
