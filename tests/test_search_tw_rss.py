@@ -126,6 +126,45 @@ class TaiwanRSSProviderTest(unittest.TestCase):
             ["https://ex.com/a", "https://ex.com/b", "https://ex.com/c"],
         )
 
+    def test_real_market_review_queries_return_headlines(self) -> None:
+        """Regression: the actual TW_PROFILE.news_queries must return general
+        headlines. These carry macro markers (加權指數/集中市場) absent from
+        _QUERY_STOPWORDS, so they previously fell into the per-stock branch and
+        were filtered down to ~0 results — the 大盤覆盤 "搜不到資料" bug."""
+        from src.core.market_profile import get_profile
+
+        provider = self._provider()
+        cjk_queries = [
+            q for q in get_profile("tw").news_queries
+            if TaiwanRSSSearchProvider._CJK_RE.search(q)
+        ]
+        self.assertTrue(cjk_queries, "expected at least one CJK market query")
+        for query in cjk_queries:
+            provider.reset_feed_cache()
+            with patch("src.search_service.requests.get", return_value=self._response()):
+                resp = provider.search(query, max_results=5)
+            self.assertTrue(resp.success, query)
+            # Newest-first general headlines, not narrowed to per-stock hits.
+            self.assertEqual(
+                [r.url for r in resp.results],
+                ["https://ex.com/a", "https://ex.com/b", "https://ex.com/c"],
+                query,
+            )
+
+    def test_non_taiwan_macro_queries_do_not_return_taiwan_headlines(self) -> None:
+        """CN/HK market-review queries share generic terms (大盘/行情/复盘) with
+        Taiwan but carry no Taiwan-specific marker, so they must NOT be treated
+        as Taiwan market-level queries (otherwise the CN/HK 大盤覆盤 would be
+        polluted with Taiwan headlines)."""
+        provider = self._provider()
+        for query in ("A股 大盘 复盘", "港股 大盘 复盘", "恒生指数 行情", "股市 行情 分析"):
+            provider.reset_feed_cache()
+            with patch("src.search_service.requests.get", return_value=self._response()):
+                resp = provider.search(query, max_results=5)
+            self.assertTrue(resp.success, query)
+            # None of the fixture headlines contain these CN/HK tokens.
+            self.assertEqual(resp.results, [], query)
+
     def test_non_taiwan_query_short_circuits_without_network(self) -> None:
         provider = self._provider()
         with patch("src.search_service.requests.get") as mock_get:

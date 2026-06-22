@@ -2135,6 +2135,17 @@ class TaiwanRSSSearchProvider(BaseSearchProvider):
         "股票", "最新消息", "最新", "消息", "新聞", "新闻", "台股", "臺股",
         "大盤", "大盘", "行情", "走勢", "走势", "市場", "市场", "分析", "個股", "个股",
     })
+    # Taiwan-specific macro markers. A query carrying any of these and no 4-digit
+    # TWSE/TPEX code is a market-level (大盤覆盤) query and should return the
+    # latest general headlines instead of being filtered down to per-stock hits.
+    # Kept Taiwan-specific on purpose: generic terms like 大盤/行情/復盤 are shared
+    # by the CN/HK market-review queries, so matching on them would pollute those
+    # markets with Taiwan headlines.
+    _MARKET_INTENT_TERMS = frozenset({
+        "台股", "臺股", "台灣", "臺灣", "台灣股市", "臺灣股市",
+        "加權指數", "加权指数", "加權", "加权", "台指", "臺指",
+        "集中市場", "集中市场", "櫃買", "柜买", "上市櫃", "上市柜",
+    })
     _CJK_RE = re.compile(r"[㐀-䶿一-鿿]")
     _CJK_RUN_RE = re.compile(r"[㐀-䶿一-鿿]{2,}")
     _TW_CODE_RE = re.compile(r"(?<!\d)\d{4}(?!\d)")
@@ -2452,6 +2463,15 @@ class TaiwanRSSSearchProvider(BaseSearchProvider):
         ]
         return name_tokens, code_tokens, has_cjk
 
+    @classmethod
+    def _is_market_level_query(cls, query: str, code_tokens: List[str]) -> bool:
+        """A Taiwan market-level (大盤覆盤) query: no specific stock code and at
+        least one Taiwan-specific macro marker (台股/加權指數/集中市場 ...)."""
+        if code_tokens:
+            return False
+        text = query or ""
+        return any(term in text for term in cls._MARKET_INTENT_TERMS)
+
     @staticmethod
     def _item_matches(item: SearchResult, name_tokens: List[str], code_tokens: List[str]) -> bool:
         haystack = f"{item.title} {item.snippet}"
@@ -2542,13 +2562,19 @@ class TaiwanRSSSearchProvider(BaseSearchProvider):
 
         ranked_scoped = self._sort_by_date_desc(scoped_items)
         ranked_general = self._sort_by_date_desc(merged)
-        if name_tokens or code_tokens:
+        if self._is_market_level_query(query, code_tokens):
+            # Market-level query (台股/加權指數/集中市場 大盤覆盤): return the
+            # latest general headlines, plus any macro Google-News items, newest
+            # first. Do NOT narrow by name tokens — macro terms like 加權指數 rarely
+            # appear verbatim in headline text and would drop nearly everything.
+            selected = self._sort_by_date_desc(merged + scoped_items)
+        elif name_tokens or code_tokens:
             # Per-stock Yahoo / Google News / FinMind feeds are already scoped.
             selected = ranked_scoped + [
                 it for it in ranked_general if self._item_matches(it, name_tokens, code_tokens)
             ]
         else:
-            # Market-level query (台股/大盘 etc.): return the latest headlines.
+            # No stock identity and no Taiwan macro marker: fall back to latest headlines.
             selected = ranked_general
 
         return SearchResponse(

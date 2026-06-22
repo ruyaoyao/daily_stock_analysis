@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 台股大盘复盘 TaiwanRSS 搜不到资料：`TaiwanRSSSearchProvider` 仅在 query 无任何 CJK 名称 token 时才走「市场级最新头条」分支，但实际复盘 query（`台股 加權指數 行情`/`台灣 集中市場 法人 買賣超`）含 `加權指數`/`集中市場` 等非 stopword 词，被当成个股 query 后按这些词过滤通用头条，结果几近为空。改为以「台湾专属宏观标记（台股/加權指數/集中市場…）且无 4 位代码」判定市场级 query，返回最新通用头条；标记刻意只取台湾专属词，避免 CN/HK 复盘（共用 大盘/行情/复盘）被台股头条污染。原单测用全 stopword 的 `台股 大盤 行情` 故未暴露此 bug，已补真实复盘 query 与 CN/HK 非污染回归测试。
 - [改进] 台股个股分析 Prompt 报价显式标注新台币（NT$）：收盘/开/高/低/当前价/平均成本均显示「元（NT$）」，并在技术面加注币别说明；其余市场（A股/港股/美股）维持「元」原状。避免台股报告与 A 股同用「元」造成币别混淆。报告正文由 LLM 据此 Prompt 生成，故会随之标注 NT$。加回归测试。
 
 - [修复] LLM prompt 模板：`detect_market()` 复用 `get_market_for_stock()` 路由，新增台股 `tw` 市场角色与指引（三大法人/融资融券/±10% 涨跌停等），修复 `TW2303` 等代码误用 A 股 prompt 的问题。
