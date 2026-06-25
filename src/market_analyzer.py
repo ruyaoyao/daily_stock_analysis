@@ -435,10 +435,23 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
 
         return overview
 
+    def _macro_before_date(self, overview: MarketOverview):
+        """覆盤的隔夜美系背景應鎖定到「對應交易日的前一個美股收盤交易日」，而非依執行
+        時間抓到最新一根。亞股（tw/cn/hk/jp/kr）回傳覆盤交易日（取其「之前」最後一個
+        美股交易日＝隔夜）；美股覆盤本身即當日美系，回 None（沿用最新一根）。"""
+        if self.region == "us":
+            return None
+        try:
+            return datetime.strptime(overview.date, "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            return None
+
     def _get_global_macro(self, overview: MarketOverview) -> None:
         """獲取國際宏觀風險指標作為國際情勢背景（fail-safe：取數失敗不影響覆盤主流程）。"""
         try:
-            data = self.data_manager.get_global_macro_indicators()
+            data = self.data_manager.get_global_macro_indicators(
+                before_date=self._macro_before_date(overview)
+            )
             if data:
                 overview.global_macro = data
                 logger.info(
@@ -552,17 +565,19 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                 "[大盘] %s action=get_tx_night status=failed error=%s", self._log_context(), e
             )
 
+        before_date = self._macro_before_date(overview)
+
         # 美股盤後沿用國際背景指標（已在 4.5 取得則復用，否則再取一次）
         us_session = list(overview.global_macro or [])
         if not us_session:
             try:
-                us_session = self.data_manager.get_global_macro_indicators() or []
+                us_session = self.data_manager.get_global_macro_indicators(before_date=before_date) or []
             except Exception:
                 us_session = []
 
         # 台積電 ADR 溢價（隔夜 gap 訊號；走 yfinance，無 Shioaji 也可用）
         try:
-            adr = self.data_manager.get_tsmc_adr_premium()
+            adr = self.data_manager.get_tsmc_adr_premium(before_date=before_date)
         except Exception:
             adr = None
 

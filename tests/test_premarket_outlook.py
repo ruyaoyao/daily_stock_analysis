@@ -159,7 +159,7 @@ def test_yf_tsmc_adr_premium_computes_from_three_legs():
     from data_provider.yfinance_fetcher import YfinanceFetcher
     f = YfinanceFetcher()
 
-    def _echo(yf, yf_code, name, code):
+    def _echo(yf, yf_code, name, code, before_date=None):
         return {"TSM": {"current": 240.0, "change_pct": 1.5},
                 "TWD=X": {"current": 29.5, "change_pct": 0.1},
                 "2330.TW": {"current": 1400.0, "change_pct": 0.0}}[yf_code]
@@ -177,7 +177,7 @@ def test_yf_tsmc_adr_premium_none_when_leg_missing():
     from data_provider.yfinance_fetcher import YfinanceFetcher
     f = YfinanceFetcher()
 
-    def _partial(yf, yf_code, name, code):
+    def _partial(yf, yf_code, name, code, before_date=None):
         return {"current": 240.0} if yf_code == "TSM" else None   # FX/2330 missing
 
     with patch.dict(sys.modules, {"yfinance": MagicMock()}), \

@@ -19,7 +19,7 @@ def test_yf_global_macro_returns_four_indicators_with_bilingual_names():
     from data_provider.yfinance_fetcher import YfinanceFetcher
     f = YfinanceFetcher()
 
-    def _echo(yf, yf_code, name, code):
+    def _echo(yf, yf_code, name, code, before_date=None):
         return {"code": code, "name": name, "current": 100.0, "change_pct": 1.5}
 
     with patch.dict(sys.modules, {"yfinance": MagicMock()}), \
@@ -36,7 +36,7 @@ def test_yf_global_macro_skips_failed_indicator():
     f = YfinanceFetcher()
     calls = {"n": 0}
 
-    def _side_effect(yf, yf_code, name, code):
+    def _side_effect(yf, yf_code, name, code, before_date=None):
         calls["n"] += 1
         return None if calls["n"] == 1 else {"current": 50.0, "change_pct": -0.3}
 
@@ -136,3 +136,143 @@ def test_config_intl_context_field_defaults_true():
     from src.config import Config
     field = Config.__dataclass_fields__["market_intl_context_enabled"]
     assert field.default is True
+
+
+# --- date alignment: overnight US session, not "latest" (off-schedule robustness) ---
+
+import pandas as pd
+from datetime import date
+
+
+def _hist_df(rows):
+    """rows: list of (date_str, close). Builds a yfinance-like daily DataFrame."""
+    idx = pd.to_datetime([r[0] for r in rows])
+    return pd.DataFrame(
+        {
+            "Open": [r[1] for r in rows],
+            "High": [r[1] for r in rows],
+            "Low": [r[1] for r in rows],
+            "Close": [r[1] for r in rows],
+            "Volume": [0 for _ in rows],
+        },
+        index=idx,
+    )
+
+
+def test_fetch_before_date_picks_session_strictly_before_review_day():
+    """A 6/25 TW review must use the 6/24 (overnight) close, not 6/25's latest bar."""
+    from data_provider.yfinance_fetcher import YfinanceFetcher
+    f = YfinanceFetcher()
+    full = _hist_df([
+        ("2026-06-23", 100.0),
+        ("2026-06-24", 110.0),   # <- overnight session for a 6/25 TW review
+        ("2026-06-25", 130.0),   # <- "latest" (too fresh / same-day) must be ignored
+    ])
+    fake_ticker = MagicMock()
+    fake_ticker.history.return_value = full
+    fake_yf = MagicMock()
+    fake_yf.Ticker.return_value = fake_ticker
+
+    item = f._fetch_yf_ticker_data(fake_yf, "^SOX", "費城半導體指數", "SOX",
+                                   before_date=date(2026, 6, 25))
+    assert item is not None
+    assert item["current"] == 110.0                    # 6/24 close, not 6/25
+    assert item["prev_close"] == 100.0                 # 6/23 close
+    assert round(item["change_pct"], 4) == 10.0        # (110-100)/100
+
+
+def test_fetch_before_date_none_keeps_latest_behavior():
+    from data_provider.yfinance_fetcher import YfinanceFetcher
+    f = YfinanceFetcher()
+    two_day = _hist_df([("2026-06-24", 110.0), ("2026-06-25", 130.0)])
+    fake_ticker = MagicMock()
+    fake_ticker.history.return_value = two_day
+    fake_yf = MagicMock()
+    fake_yf.Ticker.return_value = fake_ticker
+
+    item = f._fetch_yf_ticker_data(fake_yf, "^SOX", "費城半導體指數", "SOX")
+    assert item["current"] == 130.0                    # latest row preserved
+    fake_ticker.history.assert_called_with(period="2d")
+
+
+def test_fetch_before_date_returns_none_when_no_earlier_session():
+    from data_provider.yfinance_fetcher import YfinanceFetcher
+    f = YfinanceFetcher()
+    only_after = _hist_df([("2026-06-25", 130.0), ("2026-06-26", 140.0)])
+    fake_ticker = MagicMock()
+    fake_ticker.history.return_value = only_after
+    fake_yf = MagicMock()
+    fake_yf.Ticker.return_value = fake_ticker
+
+    item = f._fetch_yf_ticker_data(fake_yf, "^SOX", "費城半導體指數", "SOX",
+                                   before_date=date(2026, 6, 25))
+    assert item is None
+
+
+def test_yf_global_macro_threads_before_date_to_each_indicator():
+    from data_provider.yfinance_fetcher import YfinanceFetcher
+    f = YfinanceFetcher()
+    seen = []
+
+    def _capture(yf, yf_code, name, code, before_date=None):
+        seen.append(before_date)
+        return {"current": 1.0, "change_pct": 0.0}
+
+    with patch.dict(sys.modules, {"yfinance": MagicMock()}), \
+         patch.object(f, "_fetch_yf_ticker_data", side_effect=_capture):
+        f.get_global_macro_indicators(before_date=date(2026, 6, 25))
+    assert seen == [date(2026, 6, 25)] * 4
+
+
+def test_manager_passes_before_date_when_fetcher_supports_it():
+    mgr = DataFetcherManager()
+    captured = {}
+
+    # Real function (not MagicMock) so inspect.signature sees the before_date param.
+    def _getter(before_date=None):
+        captured["before_date"] = before_date
+        return [{"code": "SOX", "current": 1.0}]
+
+    fetcher = MagicMock()
+    fetcher.name = "fake"
+    fetcher.get_global_macro_indicators = _getter
+    mgr._fetchers = [fetcher]
+    assert mgr.get_global_macro_indicators(before_date=date(2026, 6, 25)) == [
+        {"code": "SOX", "current": 1.0}
+    ]
+    assert captured["before_date"] == date(2026, 6, 25)
+
+
+def test_manager_falls_back_to_no_arg_for_legacy_fetcher():
+    """A fetcher whose getter lacks before_date must still be called (no TypeError)."""
+    mgr = DataFetcherManager()
+    legacy = MagicMock()
+    legacy.name = "legacy"
+
+    # Real function (not MagicMock) so inspect.signature sees no before_date param.
+    def _legacy_getter():
+        return [{"code": "SOX", "current": 2.0}]
+
+    legacy.get_global_macro_indicators = _legacy_getter
+    mgr._fetchers = [legacy]
+    assert mgr.get_global_macro_indicators(before_date=date(2026, 6, 25)) == [
+        {"code": "SOX", "current": 2.0}
+    ]
+
+
+def test_macro_before_date_tw_is_review_day_us_is_none():
+    a_tw = MarketAnalyzer(region="tw")
+    assert a_tw._macro_before_date(MarketOverview(date="2026-06-25")) == date(2026, 6, 25)
+    a_us = MarketAnalyzer(region="us")
+    assert a_us._macro_before_date(MarketOverview(date="2026-06-25")) is None
+    # Malformed date is fail-safe (None -> latest behavior, no crash).
+    assert a_tw._macro_before_date(MarketOverview(date="not-a-date")) is None
+
+
+def test_get_global_macro_threads_review_date_for_tw():
+    a = MarketAnalyzer(region="tw")
+    ov = MarketOverview(date="2026-06-25")
+    with patch.object(a.data_manager, "get_global_macro_indicators",
+                      return_value=[{"code": "SOX", "current": 1.0}]) as g:
+        a._get_global_macro(ov)
+    g.assert_called_once_with(before_date=date(2026, 6, 25))

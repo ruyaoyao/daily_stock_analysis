@@ -16,7 +16,7 @@ YfinanceFetcher - 兜底數據源 (Priority 4)
 
 import csv
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from io import StringIO
 from typing import Optional, List, Dict, Any
 from urllib.error import HTTPError, URLError
@@ -291,7 +291,14 @@ class YfinanceFetcher(BaseFetcher):
 
         return df
 
-    def _fetch_yf_ticker_data(self, yf, yf_code: str, name: str, return_code: str) -> Optional[Dict[str, Any]]:
+    def _fetch_yf_ticker_data(
+        self,
+        yf,
+        yf_code: str,
+        name: str,
+        return_code: str,
+        before_date: Optional[date] = None,
+    ) -> Optional[Dict[str, Any]]:
         """
         通過 yfinance 拉取單個指數/股票的行情數據。
 
@@ -300,17 +307,34 @@ class YfinanceFetcher(BaseFetcher):
             yf_code: yfinance 使用的代碼（如 '000001.SS'、'^GSPC'）
             name: 指數顯示名稱
             return_code: 寫入結果 dict 的 code 欄位（如 'sh000001'、'SPX'）
+            before_date: 若提供，僅取「該日期之前」最後一個收盤交易日（用於把
+                覆盤的隔夜美系背景鎖定到對應交易日，而非依執行時間抓到最新／盤中未完成
+                的一根）。None＝沿用原行為，取最近兩日。
 
         Returns:
             行情字典，失敗時返回 None
         """
         ticker = yf.Ticker(yf_code)
-        # 取近兩日數據以計算漲跌幅
-        hist = ticker.history(period='2d')
-        if hist.empty:
-            return None
-        today_row = hist.iloc[-1]
-        prev_row = hist.iloc[-2] if len(hist) > 1 else today_row
+        if before_date is None:
+            # 取近兩日數據以計算漲跌幅
+            hist = ticker.history(period='2d')
+            if hist.empty:
+                return None
+            today_row = hist.iloc[-1]
+            prev_row = hist.iloc[-2] if len(hist) > 1 else today_row
+        else:
+            # 對齊覆盤交易日：取較長區間後，挑出「該交易日之前」最後一個收盤交易日，
+            # 避免依執行時間抓到過新的（甚至盤中未完成）一根。yfinance 僅含實際交易日，
+            # 故 < before_date 自動跳過週末／假日。
+            hist = ticker.history(period='1mo')
+            if hist.empty:
+                return None
+            eligible = [pos for pos, ts in enumerate(hist.index) if ts.date() < before_date]
+            if not eligible:
+                return None
+            last_pos = eligible[-1]
+            today_row = hist.iloc[last_pos]
+            prev_row = hist.iloc[last_pos - 1] if last_pos >= 1 else today_row
         price = float(today_row['Close'])
         prev_close = float(prev_row['Close'])
         change = price - prev_close
@@ -383,7 +407,9 @@ class YfinanceFetcher(BaseFetcher):
 
         return None
 
-    def get_global_macro_indicators(self) -> Optional[List[Dict[str, Any]]]:
+    def get_global_macro_indicators(
+        self, before_date: Optional[date] = None
+    ) -> Optional[List[Dict[str, Any]]]:
         """獲取國際宏觀風險指標，作為大盤覆盤的「國際情勢」背景（全市場通用）。
 
         指標（皆走 yfinance，免 key）：
@@ -391,6 +417,9 @@ class YfinanceFetcher(BaseFetcher):
         - DX-Y.NYB 美元指數 DXY（資金面/匯率）
         - ^VIX     波動率指數（風險偏好溫度計）
         - ^TNX     美債 10 年期殖利率（利率環境）
+
+        ``before_date`` 若提供，則把各指標鎖定到「該日期之前」最後一個收盤交易日
+        （亞股覆盤的隔夜美系背景＝前一美股交易日），避免依執行時間抓到最新一根。
 
         單一指標失敗不影響其餘；結果含 zh_name/en_name 以利雙語渲染；全部失敗回 None。
         """
@@ -406,7 +435,7 @@ class YfinanceFetcher(BaseFetcher):
         results: List[Dict[str, Any]] = []
         for yf_code, code, zh_name, en_name in macro_symbols:
             try:
-                item = self._fetch_yf_ticker_data(yf, yf_code, zh_name, code)
+                item = self._fetch_yf_ticker_data(yf, yf_code, zh_name, code, before_date=before_date)
                 if item:
                     item['zh_name'] = zh_name
                     item['en_name'] = en_name
@@ -420,21 +449,26 @@ class YfinanceFetcher(BaseFetcher):
             return results
         return None
 
-    def get_tsmc_adr_premium(self) -> Optional[Dict[str, Any]]:
+    def get_tsmc_adr_premium(
+        self, before_date: Optional[date] = None
+    ) -> Optional[Dict[str, Any]]:
         """台積電 ADR（TSM）相對 2330 普通股的溢/折價,作為開盤前的隔夜 gap 訊號。
 
         1 ADR = 5 普通股;implied_2330(TWD) = TSM_USD × USDTWD / 5;
         premium% = implied / 2330_prev_close − 1（正＝ADR 溢價,偏多 gap）。
         三隻腳（TSM / TWD=X / 2330.TW）任一缺失回 None。皆走 yfinance,免 key,
         無 Shioaji 也可用。
+
+        ``before_date`` 若提供，三隻腳皆取「該日期之前」最後一個收盤交易日
+        （隔夜美系 TSM / 匯率 + 前一台股收盤 2330），避免依執行時間抓到最新一根。
         """
         import yfinance as yf
 
         ADR_RATIO = 5  # 1 TSM ADR = 5 股 2330
         try:
-            adr = self._fetch_yf_ticker_data(yf, "TSM", "台積電ADR", "TSM")
-            fx = self._fetch_yf_ticker_data(yf, "TWD=X", "美元兌台幣", "USDTWD")
-            twn = self._fetch_yf_ticker_data(yf, "2330.TW", "台積電", "2330")
+            adr = self._fetch_yf_ticker_data(yf, "TSM", "台積電ADR", "TSM", before_date=before_date)
+            fx = self._fetch_yf_ticker_data(yf, "TWD=X", "美元兌台幣", "USDTWD", before_date=before_date)
+            twn = self._fetch_yf_ticker_data(yf, "2330.TW", "台積電", "2330", before_date=before_date)
         except Exception as e:
             logger.warning(f"[Yfinance] 取台積電 ADR 溢價失敗: {e}")
             return None

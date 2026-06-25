@@ -17,9 +17,10 @@
 import logging
 import random
 import time
+import inspect
 from threading import BoundedSemaphore, RLock, Thread
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Callable, Optional, List, Tuple, Dict, Any
 
 import pandas as pd
@@ -2516,17 +2517,32 @@ class DataFetcherManager:
                 continue
         return []
 
-    def get_global_macro_indicators(self) -> List[Dict[str, Any]]:
+    @staticmethod
+    def _call_with_optional_before(getter, before_date):
+        """调用 getter，仅当其签名支持 ``before_date`` 时透传该参数（向后兼容旧数据源）。"""
+        try:
+            supports = "before_date" in inspect.signature(getter).parameters
+        except (TypeError, ValueError):
+            supports = False
+        if supports and before_date is not None:
+            return getter(before_date=before_date)
+        return getter()
+
+    def get_global_macro_indicators(
+        self, before_date: Optional[date] = None
+    ) -> List[Dict[str, Any]]:
         """获取国际宏观风险指标（SOX/DXY/VIX/美债10Y），作为大盘复盘的国际情势背景。
 
         走支持该能力的数据源（目前 yfinance，免 key）；任一来源失败则尝试下一个，全部失败回 []。
+        ``before_date`` 若提供，则把指标锁定到「该日期之前」最后一个收盘交易日
+        （亚股复盘的隔夜美系背景），避免依执行时间抓到最新一根。
         """
         for fetcher in self._fetchers:
             getter = getattr(fetcher, "get_global_macro_indicators", None)
             if getter is None:
                 continue
             try:
-                data = getter()
+                data = self._call_with_optional_before(getter, before_date)
                 if data:
                     logger.info(f"[{fetcher.name}] 获取国际宏观指标成功")
                     return data
@@ -2555,17 +2571,20 @@ class DataFetcherManager:
                 continue
         return None
 
-    def get_tsmc_adr_premium(self) -> Optional[Dict[str, Any]]:
+    def get_tsmc_adr_premium(
+        self, before_date: Optional[date] = None
+    ) -> Optional[Dict[str, Any]]:
         """获取台积电 ADR（TSM）相对 2330 的溢/折价，供「盘前展望」隔夜 gap 信号。
 
         走支持该能力的数据源（目前 yfinance，免 key）；不可用或失败回 None。
+        ``before_date`` 若提供，则三只脚皆锁定到「该日期之前」最后一个收盘交易日。
         """
         for fetcher in self._fetchers:
             getter = getattr(fetcher, "get_tsmc_adr_premium", None)
             if getter is None:
                 continue
             try:
-                data = getter()
+                data = self._call_with_optional_before(getter, before_date)
                 if data:
                     logger.info(f"[{fetcher.name}] 获取台积电 ADR 溢价成功")
                     return data
