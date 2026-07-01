@@ -1,7 +1,12 @@
 # Daily Stock Analysis — task runner.
 # Run `make` or `make help` to list all commands.
 SHELL := bash
-PYTHON ?= python
+VENV_PYTHON := .venv/bin/python
+ifneq ("$(wildcard $(VENV_PYTHON))","")
+PYTHON ?= $(VENV_PYTHON)
+else
+PYTHON ?= $(shell command -v python3 2>/dev/null || echo python)
+endif
 WEB := apps/dsa-web
 S ?=
 R ?= cn
@@ -16,7 +21,7 @@ help: ## List available commands
 		| awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
 install: ## Install backend (pip) + web (npm) dependencies
-	pip install -r requirements.txt
+	$(PYTHON) -m pip install -r requirements.txt
 	cd $(WEB) && npm ci
 
 serve: ## Run the web app (FastAPI serves the built frontend) at http://localhost:8000
